@@ -1,0 +1,24 @@
+R_DEF: Internal format may change without notice
+local
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+string btn_main_menu
+string btn_new_game
+string btn_play_again
+string btn_resume
+string btn_settings
+string home_title
+string player_bot
+string player_human
+string setup_mode_ffa
+string setup_mode_team
+string setup_start
+string setup_title
+string turn_no_moves
+string turn_prompt_pick
+string turn_prompt_roll
+string win_title
+style Theme.FailureLudo
