@@ -40,7 +40,7 @@ Implication: for an offline production app, we should ship polished visual/audio
   - Distinguish safe squares with icon + subtle ring (not color-only).
   - Highlight last moved path briefly (start → end).
 
-- [ ] **Pawn Design Upgrade v1**
+- [x] **Pawn Design Upgrade v1**
   - Improve pawn silhouette readability at small sizes.
   - Add selectable state ring + glow standardization.
   - Add stack indicator treatment when 2–4 pawns overlap.
@@ -57,12 +57,12 @@ Implication: for an offline production app, we should ship polished visual/audio
   - Master volume slider.
 
 ### P1 — Production Polish (High value)
-- [ ] **Dice Interaction Upgrade**
+- [x] **Dice Interaction Upgrade**
   - Roll animation with brief anticipation + settle state.
   - Disable/re-enable states with explicit visual affordance.
   - “Your turn” pulse around current player dice.
 
-- [ ] **Event FX Layer**
+- [x] **Event FX Layer**
   - Capture burst with emoji-style reaction (configurable intensity).
   - Finish/home arrival confetti-lite effect.
   - Extra-roll visual badge near current player.
@@ -161,8 +161,10 @@ Implication: for an offline production app, we should ship polished visual/audio
 - [ ] Stress test repeated animations for memory growth/regressions.
 
 ## Status
-- Plan status: **Milestone A Complete (partial P0 pending)**
+- Plan status: **Milestone B In Progress**
 - Milestone A status: **Completed (2026-03-26)**
-- Pending in P0: **Pawn Design Upgrade v1**
-- Priority: **Immediate (Offline-first gate)**
+- Milestone B status: **Started (2026-03-26)**
+- Milestone B progress: **2/3 complete (Dice + Pawn + Event FX done; Turn Guidance pending)**
+- Pending in P0: **None**
+- Priority: **High (Interaction polish)**
 - Last updated: 2026-03-26

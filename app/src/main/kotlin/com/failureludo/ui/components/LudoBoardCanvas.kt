@@ -276,6 +276,7 @@ private fun DrawScope.drawAllPieces(
         val (row, col) = cell
         val baseCx = (col + 0.5f) * cellSize
         val baseCy = (row + 0.5f) * cellSize
+        val stackCount = pieces.size
 
         pieces.forEachIndexed { i, piece ->
             val isMovable = (piece.color to piece.id) in movable
@@ -297,39 +298,98 @@ private fun DrawScope.drawAllPieces(
             }
             val cx = baseCx + offset.x
             val cy = baseCy + offset.y
-            val radius = cellSize * 0.32f
+            val radius = when {
+                stackCount >= 4 -> cellSize * 0.24f
+                stackCount == 3 -> cellSize * 0.26f
+                stackCount == 2 -> cellSize * 0.28f
+                else -> cellSize * 0.30f
+            }
 
-            // Glow if movable
+            // Standardized selectable ring + glow
             if (isMovable) {
                 drawCircle(
-                    color  = Color.White.copy(alpha = 0.7f),
-                    radius = radius + 5f,
+                    color  = Color.White.copy(alpha = 0.22f),
+                    radius = radius + cellSize * 0.22f,
                     center = Offset(cx, cy)
+                )
+                drawCircle(
+                    color  = Color.White.copy(alpha = 0.95f),
+                    radius = radius + cellSize * 0.12f,
+                    center = Offset(cx, cy),
+                    style  = Stroke(width = cellSize * 0.05f)
                 )
             }
 
-            // Piece body
-            drawCircle(color = playerColor(piece.color, playerPalette), radius = radius, center = Offset(cx, cy))
+            // Pawn silhouette for small-size readability: base + head
             drawCircle(
-                color  = Color.Black.copy(alpha = 0.3f),
-                radius = radius,
-                center = Offset(cx, cy),
-                style  = Stroke(width = 2f)
-            )
-            // Inner highlight
-            drawCircle(
-                color  = Color.White.copy(alpha = 0.4f),
-                radius = radius * 0.5f,
-                center = Offset(cx - radius * 0.2f, cy - radius * 0.2f)
+                color = Color.Black.copy(alpha = 0.16f),
+                radius = radius * 0.78f,
+                center = Offset(cx, cy + radius * 0.48f)
             )
 
-            // Pulsing border for movable pieces
-            if (isMovable) {
+            drawCircle(
+                color = playerColor(piece.color, playerPalette),
+                radius = radius * 0.62f,
+                center = Offset(cx, cy + radius * 0.22f)
+            )
+
+            drawCircle(
+                color = playerColor(piece.color, playerPalette),
+                radius = radius * 0.56f,
+                center = Offset(cx, cy - radius * 0.38f)
+            )
+
+            drawCircle(
+                color  = Color.Black.copy(alpha = 0.3f),
+                radius = radius * 0.62f,
+                center = Offset(cx, cy + radius * 0.22f),
+                style  = Stroke(width = 2f)
+            )
+
+            drawCircle(
+                color  = Color.Black.copy(alpha = 0.3f),
+                radius = radius * 0.56f,
+                center = Offset(cx, cy - radius * 0.38f),
+                style  = Stroke(width = 2f)
+            )
+
+            // Head highlight
+            drawCircle(
+                color  = Color.White.copy(alpha = 0.4f),
+                radius = radius * 0.22f,
+                center = Offset(cx - radius * 0.16f, cy - radius * 0.54f)
+            )
+        }
+
+        if (stackCount > 1) {
+            val badgeCenter = Offset(
+                x = baseCx + cellSize * 0.30f,
+                y = baseCy - cellSize * 0.30f
+            )
+            val badgeRadius = cellSize * 0.16f
+
+            drawCircle(
+                color = Color.White.copy(alpha = 0.95f),
+                radius = badgeRadius,
+                center = badgeCenter
+            )
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.5f),
+                radius = badgeRadius,
+                center = badgeCenter,
+                style = Stroke(width = cellSize * 0.03f)
+            )
+
+            val markerCount = stackCount.coerceIn(2, 4)
+            val dotRadius = cellSize * 0.026f
+            val gap = cellSize * 0.07f
+            val startX = badgeCenter.x - (gap * (markerCount - 1) / 2f)
+
+            repeat(markerCount) { markerIndex ->
                 drawCircle(
-                    color  = Color.White,
-                    radius = radius + 3f,
-                    center = Offset(cx, cy),
-                    style  = Stroke(width = 3f)
+                    color = Color.Black.copy(alpha = 0.85f),
+                    radius = dotRadius,
+                    center = Offset(startX + markerIndex * gap, badgeCenter.y)
                 )
             }
         }

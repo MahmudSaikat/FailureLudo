@@ -1,5 +1,8 @@
 package com.failureludo.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -14,7 +17,9 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,6 +31,10 @@ import com.failureludo.ui.components.DiceView
 import com.failureludo.ui.components.LudoBoardCanvas
 import com.failureludo.ui.theme.*
 import com.failureludo.viewmodel.GameViewModel
+import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +68,12 @@ fun GameBoardScreen(
 
     var previousDiceSignature by remember { mutableStateOf<String?>(null) }
     var previousEventSize by remember { mutableIntStateOf(0) }
+    var captureFxTrigger by remember { mutableIntStateOf(0) }
+    var captureFxColor by remember { mutableStateOf(Color.White) }
+    var finishFxTrigger by remember { mutableIntStateOf(0) }
+    var finishFxColor by remember { mutableStateOf(Color.White) }
+    var extraRollBadgeColor by remember { mutableStateOf<PlayerColor?>(null) }
+    var extraRollBadgeToken by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(gameState, feedbackSettings) {
         val diceSignature = gameState.lastDice?.let {
@@ -77,6 +92,8 @@ fun GameBoardScreen(
                 when (event) {
                     is GameEvent.PieceCaptured -> {
                         feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
+                        captureFxColor = playerColor(event.byColor, setup.playerColors)
+                        captureFxTrigger += 1
                         if (feedbackSettings.hapticsEnabled) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
@@ -84,10 +101,21 @@ fun GameBoardScreen(
 
                     is GameEvent.PieceFinished -> {
                         feedbackManager.emitSound(FeedbackEvent.PIECE_FINISH, feedbackSettings)
+                        finishFxColor = playerColor(event.color, setup.playerColors)
+                        finishFxTrigger += 1
                     }
 
                     is GameEvent.ExtraRollGranted -> {
                         feedbackManager.emitSound(FeedbackEvent.EXTRA_ROLL, feedbackSettings)
+                        extraRollBadgeColor = event.color
+                        val token = extraRollBadgeToken + 1
+                        extraRollBadgeToken = token
+                        launch {
+                            kotlinx.coroutines.delay(1200)
+                            if (extraRollBadgeToken == token) {
+                                extraRollBadgeColor = null
+                            }
+                        }
                     }
 
                     is GameEvent.TurnSkipped,
@@ -206,6 +234,7 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -218,19 +247,37 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
                         }
                     }
 
-                    LudoBoardCanvas(
-                        allPieces        = piecesMap,
-                        movablePieceIds  = movableSet,
-                        playerPalette    = setup.playerColors,
-                        onPieceTapped    = { piece -> viewModel.selectPiece(piece) },
-                        modifier         = Modifier.size(boardSize)
-                    )
+                    Box(
+                        modifier = Modifier.size(boardSize),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        LudoBoardCanvas(
+                            allPieces        = piecesMap,
+                            movablePieceIds  = movableSet,
+                            playerPalette    = setup.playerColors,
+                            onPieceTapped    = { piece -> viewModel.selectPiece(piece) },
+                            modifier         = Modifier.matchParentSize()
+                        )
+
+                        CaptureBurstOverlay(
+                            trigger = captureFxTrigger,
+                            tint = captureFxColor,
+                            modifier = Modifier.matchParentSize()
+                        )
+
+                        FinishConfettiOverlay(
+                            trigger = finishFxTrigger,
+                            tint = finishFxColor,
+                            modifier = Modifier.matchParentSize()
+                        )
+                    }
 
                     Row(
                         modifier = Modifier
@@ -247,6 +294,7 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -259,6 +307,7 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -341,6 +390,7 @@ private fun SideRailDice(
     diceValue: Int?,
     isCurrent: Boolean,
     isRollable: Boolean,
+    showExtraRollBadge: Boolean,
     onRoll: () -> Unit,
     size: androidx.compose.ui.unit.Dp
 ) {
@@ -348,17 +398,133 @@ private fun SideRailDice(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        DiceView(
-            diceValue = diceValue,
-            isRollable = isRollable,
-            onRoll = onRoll,
-            size = size
-        )
+        Box(contentAlignment = Alignment.TopCenter) {
+            DiceView(
+                diceValue = diceValue,
+                isRollable = isRollable,
+                isCurrentTurn = isCurrent,
+                onRoll = onRoll,
+                size = size
+            )
+
+            if (showExtraRollBadge) {
+                ExtraRollBadge()
+            }
+        }
         Text(
             text = player.color.displayName,
             style = MaterialTheme.typography.labelSmall,
             color = if (isCurrent) Primary else OnSurface.copy(alpha = 0.7f),
             maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun ExtraRollBadge() {
+    Surface(
+        modifier = Modifier.offset(y = (-6).dp),
+        shape = RoundedCornerShape(10.dp),
+        color = Secondary,
+        tonalElevation = 2.dp
+    ) {
+        Text(
+            text = "EXTRA",
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = OnPrimary,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun CaptureBurstOverlay(
+    trigger: Int,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    val progress = remember { Animatable(1f) }
+
+    LaunchedEffect(trigger) {
+        if (trigger <= 0) return@LaunchedEffect
+        progress.snapTo(0f)
+        progress.animateTo(1f, animationSpec = tween(durationMillis = 420))
+    }
+
+    val p = progress.value
+    val alpha = (1f - p).coerceIn(0f, 1f)
+    if (alpha <= 0.01f) return
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val ringRadius = size.minDimension * (0.12f + p * 0.22f)
+
+            drawCircle(
+                color = tint.copy(alpha = 0.22f * alpha),
+                radius = ringRadius,
+                center = center
+            )
+            drawCircle(
+                color = tint.copy(alpha = 0.9f * alpha),
+                radius = ringRadius,
+                center = center,
+                style = Stroke(width = size.minDimension * 0.012f)
+            )
+        }
+
+        Text(
+            text = "💥",
+            style = MaterialTheme.typography.headlineMedium,
+            fontSize = (30f * (1f + p * 0.22f)).sp,
+            color = Color.White.copy(alpha = alpha)
+        )
+    }
+}
+
+@Composable
+private fun FinishConfettiOverlay(
+    trigger: Int,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    val progress = remember { Animatable(1f) }
+
+    LaunchedEffect(trigger) {
+        if (trigger <= 0) return@LaunchedEffect
+        progress.snapTo(0f)
+        progress.animateTo(1f, animationSpec = tween(durationMillis = 700))
+    }
+
+    val p = progress.value
+    val alpha = (1f - p).coerceIn(0f, 1f)
+    if (alpha <= 0.01f) return
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val centerX = center.x
+            val centerY = center.y
+            val minDim = size.minDimension
+
+            repeat(12) { index ->
+                val angle = (2f * PI.toFloat() * index) / 12f
+                val distance = minDim * (0.12f + p * 0.32f)
+                val dotX = centerX + cos(angle) * distance
+                val dotY = centerY + sin(angle) * distance
+
+                drawCircle(
+                    color = tint.copy(alpha = alpha),
+                    radius = minDim * (0.012f - (p * 0.004f)).coerceAtLeast(minDim * 0.006f),
+                    center = Offset(dotX, dotY)
+                )
+            }
+        }
+
+        Text(
+            text = "✨",
+            style = MaterialTheme.typography.headlineMedium,
+            fontSize = (26f * (1f + p * 0.16f)).sp,
+            color = Color.White.copy(alpha = alpha)
         )
     }
 }
