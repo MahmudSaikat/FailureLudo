@@ -7,6 +7,7 @@ import com.failureludo.data.FeedbackSettings
 import com.failureludo.data.GamePreferencesStore
 import com.failureludo.data.GameSessionStore
 import com.failureludo.engine.GameEngine
+import com.failureludo.engine.GameRules
 import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
 import com.failureludo.engine.PlayerType
@@ -71,6 +72,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _gameState = MutableStateFlow<GameState?>(null)
     val gameState: StateFlow<GameState?> = _gameState.asStateFlow()
 
+    private val _pendingHomeEntryChoicePiece = MutableStateFlow<Piece?>(null)
+    val pendingHomeEntryChoicePiece: StateFlow<Piece?> = _pendingHomeEntryChoicePiece.asStateFlow()
+
     val hasActiveGame: Boolean
         get() = _gameState.value?.let { !it.isGameOver } ?: false
 
@@ -80,6 +84,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // ── Actions ───────────────────────────────────────────────────────────────
 
     fun startGame() {
+        _pendingHomeEntryChoicePiece.value = null
         val setup = _setupState.value
         val newState = GameEngine.newGame(
             activeColors = setup.activeColors,
@@ -129,7 +134,42 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
 
-        val newState = GameEngine.selectPiece(state, piece)
+        val isHumanTurn = state.currentPlayer.type == PlayerType.HUMAN
+        val shouldPromptForHomeEntryChoice = isHumanTurn &&
+            GameRules.wouldEnterHomePath(
+                piece,
+                state.lastDice!!.value,
+                state.currentPlayer.color,
+                state.players,
+                state.mode
+            )
+
+        if (shouldPromptForHomeEntryChoice) {
+            _pendingHomeEntryChoicePiece.value = piece
+            return
+        }
+
+        applyPieceSelection(piece, deferHomeEntry = false)
+    }
+
+    fun resolveHomeEntryChoice(enterHomePath: Boolean) {
+        val piece = _pendingHomeEntryChoicePiece.value ?: return
+        _pendingHomeEntryChoicePiece.value = null
+        applyPieceSelection(piece, deferHomeEntry = !enterHomePath)
+    }
+
+    fun dismissHomeEntryChoice() {
+        _pendingHomeEntryChoicePiece.value = null
+    }
+
+    // ── Private ───────────────────────────────────────────────────────────────
+
+    private fun applyPieceSelection(piece: Piece, deferHomeEntry: Boolean) {
+        val state = _gameState.value ?: return
+        if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
+        if (piece !in state.movablePieces) return
+
+        val newState = GameEngine.selectPiece(state, piece, deferHomeEntry)
         setGameState(newState)
 
         if (newState.isGameOver) {
@@ -141,8 +181,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         checkForBotTurn()
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
-
     private fun handleNoMoves() {
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.NO_MOVES_AVAILABLE) return
@@ -153,6 +191,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setGameState(newState: GameState?) {
+        val pendingPiece = _pendingHomeEntryChoicePiece.value
+        if (pendingPiece != null) {
+            val shouldKeepPending = newState != null &&
+                newState.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION &&
+                pendingPiece in newState.movablePieces &&
+                newState.currentPlayer.type == PlayerType.HUMAN
+
+            if (!shouldKeepPending) {
+                _pendingHomeEntryChoicePiece.value = null
+            }
+        }
+
         _gameState.value = newState
         viewModelScope.launch {
             sessionStore.saveGameState(newState)

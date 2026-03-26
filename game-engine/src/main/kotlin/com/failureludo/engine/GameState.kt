@@ -27,6 +27,7 @@ enum class TurnPhase {
 data class GameState(
     val players: List<Player>,
     val mode: GameMode,
+    val moveCounter: Long = 0L,
     val currentPlayerIndex: Int = 0,
     val turnPhase: TurnPhase = TurnPhase.WAITING_FOR_ROLL,
     val lastDice: DiceResult? = null,

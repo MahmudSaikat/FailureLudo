@@ -46,6 +46,7 @@ fun GameBoardScreen(
     val state by viewModel.gameState.collectAsState()
     val setup by viewModel.setupState.collectAsState()
     val feedbackSettings by viewModel.feedbackSettings.collectAsState()
+    val pendingHomeEntryChoicePiece by viewModel.pendingHomeEntryChoicePiece.collectAsState()
     val haptics = LocalHapticFeedback.current
     val feedbackManager = remember { GameFeedbackManager() }
 
@@ -159,6 +160,24 @@ fun GameBoardScreen(
             settings = feedbackSettings,
             onSettingsChange = viewModel::updateFeedbackSettings,
             onDismiss = { showFeedbackDialog = false }
+        )
+    }
+
+    if (pendingHomeEntryChoicePiece != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissHomeEntryChoice() },
+            title = { Text("Choose Pawn Path") },
+            text = { Text("This move can enter the finishing path. Do you want to enter now or continue circulating on the main track?") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = true) }) {
+                    Text("Enter Finish")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = false) }) {
+                    Text("Keep Circulating")
+                }
+            }
         )
     }
 
@@ -316,10 +335,6 @@ fun GameBoardScreen(
                 }
             }
 
-            // Bottom panel: status message
-            BottomPanel(
-                gameState = gameState
-            )
         }
     }
 }
@@ -526,61 +541,6 @@ private fun FinishConfettiOverlay(
             fontSize = (26f * (1f + p * 0.16f)).sp,
             color = Color.White.copy(alpha = alpha)
         )
-    }
-}
-
-@Composable
-private fun BottomPanel(gameState: GameState) {
-
-    val statusText = when (gameState.turnPhase) {
-        TurnPhase.WAITING_FOR_ROLL -> "${gameState.currentPlayer.name}'s turn — tap dice to roll"
-        TurnPhase.WAITING_FOR_PIECE_SELECTION -> "Tap a glowing piece to move"
-        TurnPhase.NO_MOVES_AVAILABLE -> "No moves — skipping turn…"
-        TurnPhase.GAME_OVER -> "Game Over!"
-    }
-
-    // Last event from log
-    val lastEvent = gameState.eventLog.lastOrNull()
-    val eventText: String? = when (lastEvent) {
-        is GameEvent.PieceCaptured      -> "💥 ${lastEvent.byColor.displayName} captured ${lastEvent.capturedColor.displayName}!"
-        is GameEvent.PieceFinished      -> "🏠 ${lastEvent.color.displayName}'s piece finished!"
-        is GameEvent.ExtraRollGranted   -> "🎲 Extra roll! (${lastEvent.reason})"
-        is GameEvent.ConsecutiveSixesForfeit -> "🚫 Three 6s — turn forfeited!"
-        is GameEvent.TurnSkipped        -> "⏭ ${lastEvent.color.displayName} skipped (no moves)"
-        else -> null
-    }
-
-    Card(
-        modifier  = Modifier.fillMaxWidth(),
-        shape     = RoundedCornerShape(16.dp),
-        colors    = CardDefaults.cardColors(containerColor = Surface),
-        elevation = CardDefaults.cardElevation(4.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    statusText,
-                    style     = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color     = OnSurface
-                )
-                if (eventText != null) {
-                    Text(
-                        eventText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Primary
-                    )
-                }
-            }
-        }
     }
 }
 

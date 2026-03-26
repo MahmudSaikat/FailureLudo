@@ -53,6 +53,7 @@ object GameEngine {
         return GameState(
             players = players,
             mode = mode,
+            moveCounter = 0L,
             currentPlayerIndex = startIndex,
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
             diceByPlayer = PlayerColor.entries.associateWith { null }
@@ -89,7 +90,7 @@ object GameEngine {
         }
 
         val diceResult = DiceResult(diceValue, rollCount)
-        val movable = GameRules.movablePieces(state.currentPlayer, diceValue, state.players)
+        val movable = GameRules.movablePieces(state.currentPlayer, diceValue, state.players, state.mode)
 
         val newPhase = if (movable.isEmpty()) TurnPhase.NO_MOVES_AVAILABLE
                        else TurnPhase.WAITING_FOR_PIECE_SELECTION
@@ -124,7 +125,7 @@ object GameEngine {
      * - A win condition
      * - Normal turn advancement
      */
-    fun selectPiece(state: GameState, piece: Piece): GameState {
+    fun selectPiece(state: GameState, piece: Piece, deferHomeEntry: Boolean = false): GameState {
         require(state.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION) {
             "selectPiece called in wrong phase: ${state.turnPhase}"
         }
@@ -134,13 +135,23 @@ object GameEngine {
         val color = state.currentPlayer.color
 
         // Compute destination
-        val destination = GameRules.computeDestination(piece, diceValue, color)!!
+        val destination = GameRules.computeDestination(piece, diceValue, color, state.players, state.mode, deferHomeEntry)!!
 
         // Count captures BEFORE applying move
-        val captureCount = GameRules.countCaptures(color, destination, state.players)
+        val captureTargets = GameRules.captureTargets(piece, diceValue, color, state.players, state.mode, deferHomeEntry)
+        val captureCount = captureTargets.size
 
         // Apply the move
-        val newPlayers = GameRules.applyMove(piece, diceValue, color, state.players)
+        val newMoveCounter = state.moveCounter + 1
+        val newPlayers = GameRules.applyMove(
+            piece = piece,
+            diceValue = diceValue,
+            color = color,
+            players = state.players,
+            mode = state.mode,
+            deferHomeEntry = deferHomeEntry,
+            movedAt = newMoveCounter
+        )
 
         // Build event list
         val events = mutableListOf<GameEvent>()
@@ -150,18 +161,13 @@ object GameEngine {
         if (destination is PiecePosition.Finished) events += GameEvent.PieceFinished(color, piece.id)
 
         // Capture events
-        if (captureCount > 0) {
-            state.players
-                .filter { it.color != color && it.isActive }
-                .forEach { opp ->
-                    opp.pieces
-                        .filter { it.position == destination }
-                        .forEach { _ -> events += GameEvent.PieceCaptured(opp.color, color) }
-                }
+        captureTargets.forEach { target ->
+            events += GameEvent.PieceCaptured(target.color, color)
         }
 
         val newState = state.copy(
             players = newPlayers,
+            moveCounter = newMoveCounter,
             eventLog = state.eventLog + events,
             movablePieces = emptyList()
         )
@@ -207,13 +213,12 @@ object GameEngine {
 
         // 1. Capture
         movable.firstOrNull { piece ->
-            val dest = GameRules.computeDestination(piece, diceValue, color)
-            dest != null && GameRules.countCaptures(color, dest, state.players) > 0
+            GameRules.countCaptures(piece, diceValue, color, state.players, state.mode) > 0
         }?.let { return it }
 
         // 2. Finish
         movable.firstOrNull { piece ->
-            GameRules.computeDestination(piece, diceValue, color) is PiecePosition.Finished
+            GameRules.computeDestination(piece, diceValue, color, state.players, state.mode) is PiecePosition.Finished
         }?.let { return it }
 
         // 3. Move the most-advanced active piece

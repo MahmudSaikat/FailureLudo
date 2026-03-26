@@ -10,7 +10,8 @@ package com.failureludo.engine
 data class Piece(
     val id: Int,
     val color: PlayerColor,
-    val position: PiecePosition = PiecePosition.HomeBase
+    val position: PiecePosition = PiecePosition.HomeBase,
+    val lastMovedAt: Long = 0L
 ) {
     val isAtHome: Boolean   get() = position is PiecePosition.HomeBase
     val isFinished: Boolean get() = position is PiecePosition.Finished

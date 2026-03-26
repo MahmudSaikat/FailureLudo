@@ -144,6 +144,7 @@ class GameSessionStore(private val context: Context) {
         return JSONObject()
             .put("players", JSONArray(state.players.map { playerToJson(it) }))
             .put("mode", state.mode.name)
+            .put("moveCounter", state.moveCounter)
             .put("currentPlayerIndex", state.currentPlayerIndex)
             .put("turnPhase", state.turnPhase.name)
             .put("lastDice", state.lastDice?.let { diceToJson(it) } ?: JSONObject.NULL)
@@ -156,6 +157,7 @@ class GameSessionStore(private val context: Context) {
     private fun gameStateFromJson(json: JSONObject): GameState {
         val players = json.getJSONArray("players").toObjectList { obj -> playerFromJson(obj) }
         val mode = GameMode.valueOf(json.getString("mode"))
+        val moveCounter = if (json.has("moveCounter")) json.getLong("moveCounter") else 0L
         val currentPlayerIndex = json.getInt("currentPlayerIndex")
         val turnPhase = TurnPhase.valueOf(json.getString("turnPhase"))
 
@@ -171,6 +173,7 @@ class GameSessionStore(private val context: Context) {
         return GameState(
             players = players,
             mode = mode,
+            moveCounter = moveCounter,
             currentPlayerIndex = currentPlayerIndex,
             turnPhase = turnPhase,
             lastDice = lastDice,
@@ -205,13 +208,15 @@ class GameSessionStore(private val context: Context) {
             .put("id", piece.id)
             .put("color", piece.color.name)
             .put("position", piecePositionToJson(piece.position))
+            .put("lastMovedAt", piece.lastMovedAt)
     }
 
     private fun pieceFromJson(json: JSONObject): Piece {
         return Piece(
             id = json.getInt("id"),
             color = PlayerColor.valueOf(json.getString("color")),
-            position = piecePositionFromJson(json.getJSONObject("position"))
+            position = piecePositionFromJson(json.getJSONObject("position")),
+            lastMovedAt = if (json.has("lastMovedAt")) json.getLong("lastMovedAt") else 0L
         )
     }
 

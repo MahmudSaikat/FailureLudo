@@ -7,30 +7,50 @@ package com.failureludo.engine
  */
 object GameRules {
 
+    data class CaptureTarget(val color: PlayerColor, val pieceId: Int)
+    private data class PieceRef(val color: PlayerColor, val pieceId: Int)
+    private data class Occupant(val color: PlayerColor, val piece: Piece)
+
     /**
      * Returns the list of pieces that can legally move given [diceValue] for [player].
      * A piece with no legal destination is excluded.
      */
-    fun movablePieces(player: Player, diceValue: Int, allPlayers: List<Player>): List<Piece> =
+    fun movablePieces(
+        player: Player,
+        diceValue: Int,
+        allPlayers: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL
+    ): List<Piece> =
         player.pieces.filter { piece ->
-            canMove(piece, diceValue, player, allPlayers)
+            canMove(piece, diceValue, player, allPlayers, mode)
         }
 
     /** True if [piece] has at least one legal move for [diceValue]. */
-    fun canMove(piece: Piece, diceValue: Int, player: Player, allPlayers: List<Player>): Boolean {
+    fun canMove(
+        piece: Piece,
+        diceValue: Int,
+        player: Player,
+        allPlayers: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL
+    ): Boolean {
         if (piece.isFinished) return false
-        return when (piece.position) {
-            is PiecePosition.HomeBase -> diceValue == 6
-            is PiecePosition.MainTrack -> {
-                val destination = computeDestination(piece, diceValue, player.color)
-                destination != null
-            }
-            is PiecePosition.HomeColumn -> {
-                val step = piece.position.step
-                step + diceValue <= Board.HOME_COLUMN_STEPS + 1 // +1 so step 5 + die 1 = Finished
-            }
-            PiecePosition.Finished -> false
+
+        val destination = computeDestination(piece, diceValue, player.color, allPlayers, mode) ?: return false
+
+        if (piece.position is PiecePosition.MainTrack && !isMovingAsLockedDouble(piece, diceValue, player.color, allPlayers, mode)) {
+            val effectiveDice = effectiveDiceValue(piece, diceValue, player.color, allPlayers, mode) ?: return false
+            val blocked = crossesOpponentDoubleBarrier(
+                currentIndex = piece.position.index,
+                effectiveDice = effectiveDice,
+                movingColor = player.color,
+                destination = destination,
+                players = allPlayers,
+                mode = mode
+            )
+            if (blocked) return false
         }
+
+        return true
     }
 
     /**
@@ -44,29 +64,38 @@ object GameRules {
         piece: Piece,
         diceValue: Int,
         color: PlayerColor,
-        players: List<Player>
+        players: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL,
+        deferHomeEntry: Boolean = false,
+        movedAt: Long = 0L
     ): List<Player> {
-        val newPosition = computeDestination(piece, diceValue, color)
-            ?: return players  // no valid move; shouldn't be called in this case
+        val newPosition = computeDestination(piece, diceValue, color, players, mode, deferHomeEntry)
+            ?: return players
 
-        // Build updated piece
-        var movedPiece = piece.copy(position = newPosition)
+        val movingRefs = movingPieceRefs(piece, diceValue, color, players, mode)
 
-        // Check for capture: only on main track, only non-safe squares
-        var updatedPlayers = players
-        if (newPosition is PiecePosition.MainTrack && !Board.isSafeSquare(newPosition.index)) {
-            updatedPlayers = captureOpponents(movedPiece, color, players)
+        val playersAfterMove = players.map { player ->
+            player.copy(
+                pieces = player.pieces.map { p ->
+                    val ref = PieceRef(player.color, p.id)
+                    if (ref in movingRefs) {
+                        p.copy(position = newPosition, lastMovedAt = movedAt)
+                    } else p
+                }
+            )
         }
 
-        // Update the moved piece inside its player
-        return updatedPlayers.map { player ->
-            if (player.color == color) {
-                player.copy(
-                    pieces = player.pieces.map { p ->
-                        if (p.id == piece.id) movedPiece else p
-                    }
-                )
-            } else player
+        val captures = captureTargets(piece, diceValue, color, players, mode, deferHomeEntry)
+        if (captures.isEmpty()) return playersAfterMove
+
+        val captureMap = captures.groupBy { it.color }.mapValues { (_, value) -> value.map { it.pieceId }.toSet() }
+        return playersAfterMove.map { player ->
+            val capturedIds = captureMap[player.color] ?: return@map player
+            player.copy(
+                pieces = player.pieces.map { p ->
+                    if (p.id in capturedIds) p.copy(position = PiecePosition.HomeBase) else p
+                }
+            )
         }
     }
 
@@ -77,76 +106,123 @@ object GameRules {
     fun computeDestination(
         piece: Piece,
         diceValue: Int,
-        color: PlayerColor
-    ): PiecePosition? = when (piece.position) {
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL,
+        deferHomeEntry: Boolean = false
+    ): PiecePosition? {
+        val effectiveDice = effectiveDiceValue(piece, diceValue, color, players, mode) ?: return null
 
-        is PiecePosition.HomeBase -> {
-            if (diceValue == 6) PiecePosition.MainTrack(Board.ENTRY_POSITIONS.getValue(color))
-            else null
+        return when (piece.position) {
+            is PiecePosition.HomeBase -> {
+                if (effectiveDice == 6) PiecePosition.MainTrack(Board.ENTRY_POSITIONS.getValue(color))
+                else null
+            }
+            is PiecePosition.MainTrack -> {
+                val lockedRefs = lockedPairRefsForPiece(piece, color, players, mode)
+                val mixedTeamPairLocked = lockedRefs.map { it.color }.toSet().size > 1
+                val mustStayOnMainTrack = mixedTeamPairLocked
+                computeMainTrackDestination(
+                    currentIdx = piece.position.index,
+                    effectiveDice = effectiveDice,
+                    color = color,
+                    deferHomeEntry = deferHomeEntry || mustStayOnMainTrack
+                )
+            }
+            is PiecePosition.HomeColumn -> {
+                val newStep = piece.position.step + effectiveDice
+                when {
+                    newStep < Board.HOME_COLUMN_STEPS + 1 -> PiecePosition.HomeColumn(newStep)
+                    newStep == Board.HOME_COLUMN_STEPS + 1 -> PiecePosition.Finished
+                    else -> null
+                }
+            }
+            PiecePosition.Finished -> null
         }
+    }
 
-        is PiecePosition.MainTrack -> {
-            val currentIdx = piece.position.index
-            val stepsToEntry = Board.stepsToHomeColumnEntry(color, currentIdx)
+    private fun computeMainTrackDestination(
+        currentIdx: Int,
+        effectiveDice: Int,
+        color: PlayerColor,
+        deferHomeEntry: Boolean
+    ): PiecePosition? {
+        val stepsToEntry = Board.stepsToHomeColumnEntry(color, currentIdx)
 
+        return if (deferHomeEntry) {
+            val newIdx = (currentIdx + effectiveDice) % Board.MAIN_TRACK_SIZE
+            PiecePosition.MainTrack(newIdx)
+        } else {
             when {
-                diceValue <= stepsToEntry -> {
-                    // Still on main track
-                    val newIdx = (currentIdx + diceValue) % Board.MAIN_TRACK_SIZE
+                effectiveDice <= stepsToEntry -> {
+                    val newIdx = (currentIdx + effectiveDice) % Board.MAIN_TRACK_SIZE
                     PiecePosition.MainTrack(newIdx)
                 }
-                diceValue == stepsToEntry + 1 -> {
-                    // Exactly enters home column at step 1
-                    PiecePosition.HomeColumn(1)
-                }
-                diceValue > stepsToEntry + 1 -> {
-                    // Enters home column at some step
-                    val homeStep = diceValue - stepsToEntry
+                effectiveDice == stepsToEntry + 1 -> PiecePosition.HomeColumn(1)
+                effectiveDice > stepsToEntry + 1 -> {
+                    val homeStep = effectiveDice - stepsToEntry
                     when {
-                        homeStep < Board.HOME_COLUMN_STEPS + 1 ->
-                            PiecePosition.HomeColumn(homeStep)
-                        homeStep == Board.HOME_COLUMN_STEPS + 1 ->
-                            PiecePosition.Finished
-                        else -> null  // overshoots
+                        homeStep < Board.HOME_COLUMN_STEPS + 1 -> PiecePosition.HomeColumn(homeStep)
+                        homeStep == Board.HOME_COLUMN_STEPS + 1 -> PiecePosition.Finished
+                        else -> null
                     }
                 }
                 else -> null
             }
         }
+    }
 
-        is PiecePosition.HomeColumn -> {
-            val newStep = piece.position.step + diceValue
-            when {
-                newStep < Board.HOME_COLUMN_STEPS + 1 -> PiecePosition.HomeColumn(newStep)
-                newStep == Board.HOME_COLUMN_STEPS + 1 -> PiecePosition.Finished
-                else -> null  // overshoots home column
-            }
+    fun captureTargets(
+        piece: Piece,
+        diceValue: Int,
+        movingColor: PlayerColor,
+        players: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL,
+        deferHomeEntry: Boolean = false
+    ): List<CaptureTarget> {
+        val destination = computeDestination(piece, diceValue, movingColor, players, mode, deferHomeEntry)
+            ?: return emptyList()
+
+        val mainPos = destination as? PiecePosition.MainTrack ?: return emptyList()
+        if (Board.isSafeSquare(mainPos.index)) return emptyList()
+
+        val movingAsDouble = isMovingAsLockedDouble(piece, diceValue, movingColor, players, mode)
+        val enemyStacks = enemyStacksAtIndex(mainPos.index, movingColor, players, mode)
+
+        return if (movingAsDouble) {
+            enemyStacks
+                .flatMap { stack ->
+                    doubleComponentRefsForStack(stack).map { ref -> CaptureTarget(ref.color, ref.pieceId) }
+                }
+        } else {
+            enemyStacks
+                .flatMap { stack ->
+                    val doubleRefs = doubleComponentRefsForStack(stack)
+                    val protectedTopSingle = if (stack.size >= 3) topSingleRefForStack(stack) else null
+                    stack
+                        .map { occupant -> PieceRef(occupant.color, occupant.piece.id) }
+                        .filter { it !in doubleRefs }
+                        .filter { ref -> ref != protectedTopSingle }
+                        .map { ref -> CaptureTarget(ref.color, ref.pieceId) }
+                }
         }
-
-        PiecePosition.Finished -> null
     }
 
     /**
-     * If [movedPiece] lands on any opponent pieces (that are not on a safe square
-     * and not finished), those pieces are sent back to HomeBase.
+     * True when moving [piece] with [diceValue] would send it from main track
+     * into the home path (home column or direct finish).
      */
-    private fun captureOpponents(
-        movedPiece: Piece,
-        ownerColor: PlayerColor,
-        players: List<Player>
-    ): List<Player> {
-        val landingPos = movedPiece.position as? PiecePosition.MainTrack ?: return players
-
-        return players.map { player ->
-            if (player.color == ownerColor) return@map player  // can't capture own pieces
-            player.copy(
-                pieces = player.pieces.map { target ->
-                    if (target.position == landingPos && !target.isFinished) {
-                        // Captured — send home
-                        target.copy(position = PiecePosition.HomeBase)
-                    } else target
-                }
-            )
+    fun wouldEnterHomePath(
+        piece: Piece,
+        diceValue: Int,
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL
+    ): Boolean {
+        if (piece.position !is PiecePosition.MainTrack) return false
+        return when (computeDestination(piece, diceValue, color, players, mode)) {
+            is PiecePosition.HomeColumn, PiecePosition.Finished -> true
+            else -> false
         }
     }
 
@@ -161,24 +237,186 @@ object GameRules {
         capturedAny: Boolean
     ): Boolean = diceValue == 6 || capturedAny
 
-    /**
-     * Counts how many opponent pieces were captured by moving [movingColor]'s piece
-     * to [newPosition] (before the move is applied to players list).
-     */
     fun countCaptures(
+        piece: Piece,
+        diceValue: Int,
         movingColor: PlayerColor,
-        newPosition: PiecePosition,
-        players: List<Player>
-    ): Int {
-        val mainPos = newPosition as? PiecePosition.MainTrack ?: return 0
-        if (Board.isSafeSquare(mainPos.index)) return 0
+        players: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL,
+        deferHomeEntry: Boolean = false
+    ): Int = captureTargets(piece, diceValue, movingColor, players, mode, deferHomeEntry).size
 
-        return players
-            .filter { it.color != movingColor && it.isActive }
-            .sumOf { player ->
-                player.pieces.count { it.position == mainPos && !it.isFinished }
-            }
+    private fun movingPieceRefs(
+        piece: Piece,
+        diceValue: Int,
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): Set<PieceRef> {
+        val locked = lockedPairRefsForPiece(piece, color, players, mode)
+        val selfRef = PieceRef(color, piece.id)
+        val movingAsDouble = selfRef in locked && diceValue % 2 == 0
+        return if (movingAsDouble) locked else setOf(selfRef)
     }
+
+    private fun effectiveDiceValue(
+        piece: Piece,
+        diceValue: Int,
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): Int? {
+        val locked = lockedPairRefsForPiece(piece, color, players, mode)
+        val selfRef = PieceRef(color, piece.id)
+        if (selfRef !in locked) return diceValue
+        if (diceValue % 2 != 0) return null
+        return diceValue / 2
+    }
+
+    private fun isMovingAsLockedDouble(
+        piece: Piece,
+        diceValue: Int,
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): Boolean {
+        val locked = lockedPairRefsForPiece(piece, color, players, mode)
+        val selfRef = PieceRef(color, piece.id)
+        return selfRef in locked && diceValue % 2 == 0
+    }
+
+    private fun lockedPairRefsForPiece(
+        piece: Piece,
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): Set<PieceRef> {
+        val index = (piece.position as? PiecePosition.MainTrack)?.index ?: return emptySet()
+
+        val stack = ownStackAtIndex(index, color, players, mode)
+        if (stack.size < 2) return emptySet()
+
+        val doubleRefs = doubleComponentRefsForStack(stack)
+        val selfRef = PieceRef(color, piece.id)
+        if (selfRef !in doubleRefs) return emptySet()
+
+        if (Board.isSafeSquare(index)) return emptySet()
+
+        val isMixedTeamPair = doubleRefs.map { it.color }.toSet().size > 1
+        if (!isMixedTeamPair && index == Board.HOME_COLUMN_ENTRY.getValue(color)) {
+            return emptySet()
+        }
+
+        return doubleRefs
+    }
+
+    private fun ownStackAtIndex(
+        index: Int,
+        movingColor: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): List<Occupant> {
+        return occupantsAtMainIndex(players, index)
+            .filter { occupant -> isSameSide(movingColor, occupant.color, mode) }
+    }
+
+    private fun enemyStacksAtIndex(
+        index: Int,
+        movingColor: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): List<List<Occupant>> {
+        return groupedStacksAtIndex(index, players, mode)
+            .filterKeys { key -> key != sideKey(movingColor, mode) }
+            .values
+            .toList()
+    }
+
+    private fun groupedStacksAtIndex(
+        index: Int,
+        players: List<Player>,
+        mode: GameMode
+    ): Map<Int, List<Occupant>> {
+        return occupantsAtMainIndex(players, index)
+            .groupBy { occupant -> sideKey(occupant.color, mode) }
+    }
+
+    private fun occupantsAtMainIndex(players: List<Player>, index: Int): List<Occupant> {
+        return players
+            .asSequence()
+            .filter { it.isActive }
+            .flatMap { player ->
+                player.pieces.asSequence().mapNotNull { piece ->
+                    val pos = piece.position as? PiecePosition.MainTrack
+                    if (pos?.index == index) Occupant(player.color, piece) else null
+                }
+            }
+            .toList()
+    }
+
+    private fun doubleComponentRefsForStack(stack: List<Occupant>): Set<PieceRef> {
+        if (stack.size < 2) return emptySet()
+        if (stack.size == 2) return stack.map { PieceRef(it.color, it.piece.id) }.toSet()
+
+        val topSingle = topSingleRefForStack(stack)
+        val candidates = stack
+            .map { PieceRef(it.color, it.piece.id) to it.piece }
+            .filter { (ref, _) -> ref != topSingle }
+            .sortedWith(compareBy<Pair<PieceRef, Piece>>({ it.second.lastMovedAt }, { it.first.color.ordinal }, { it.first.pieceId }))
+
+        return candidates.take(2).map { it.first }.toSet()
+    }
+
+    private fun topSingleRefForStack(stack: List<Occupant>): PieceRef? {
+        if (stack.size < 3) return null
+        val top = stack.maxWithOrNull(
+            compareBy<Occupant>({ it.piece.lastMovedAt }, { it.color.ordinal }, { it.piece.id })
+        ) ?: return null
+        return PieceRef(top.color, top.piece.id)
+    }
+
+    private fun crossesOpponentDoubleBarrier(
+        currentIndex: Int,
+        effectiveDice: Int,
+        movingColor: PlayerColor,
+        destination: PiecePosition,
+        players: List<Player>,
+        mode: GameMode
+    ): Boolean {
+        val mainTrackSteps = when (destination) {
+            is PiecePosition.MainTrack -> effectiveDice
+            is PiecePosition.HomeColumn, PiecePosition.Finished ->
+                Board.stepsToHomeColumnEntry(movingColor, currentIndex)
+            else -> 0
+        }
+
+        if (mainTrackSteps <= 0) return false
+
+        for (step in 1..mainTrackSteps) {
+            val index = (currentIndex + step) % Board.MAIN_TRACK_SIZE
+            if (!hasOpponentDoubleAt(index, movingColor, players, mode)) continue
+
+            val landsOnBarrierCell = destination is PiecePosition.MainTrack && step == mainTrackSteps
+            if (!landsOnBarrierCell) return true
+        }
+        return false
+    }
+
+    private fun hasOpponentDoubleAt(
+        index: Int,
+        movingColor: PlayerColor,
+        players: List<Player>,
+        mode: GameMode
+    ): Boolean {
+        return enemyStacksAtIndex(index, movingColor, players, mode)
+            .any { stack -> stack.size >= 2 }
+    }
+
+    private fun sideKey(color: PlayerColor, mode: GameMode): Int =
+        if (mode == GameMode.TEAM) color.teamIndex else color.ordinal
+
+    private fun isSameSide(a: PlayerColor, b: PlayerColor, mode: GameMode): Boolean =
+        sideKey(a, mode) == sideKey(b, mode)
 
     /**
      * Determines the winner(s) in FREE_FOR_ALL or TEAM mode.
@@ -193,7 +431,6 @@ object GameRules {
                 winner?.let { listOf(it.color) }
             }
             GameMode.TEAM -> {
-                // Team 0: RED + YELLOW, Team 1: BLUE + GREEN
                 for (teamIndex in 0..1) {
                     val teamPlayers = activePlayers.filter { it.color.teamIndex == teamIndex }
                     if (teamPlayers.isNotEmpty() && teamPlayers.all { it.hasFinished }) {
@@ -211,11 +448,11 @@ object GameRules {
      */
     fun nextPlayerIndex(currentIndex: Int, players: List<Player>): Int {
         val size = players.size
-        var next = (currentIndex + 1) % size
+        var next = (currentIndex - 1 + size) % size
         repeat(size) {
             if (players[next].isActive) return next
-            next = (next + 1) % size
+            next = (next - 1 + size) % size
         }
-        return currentIndex // fallback (should never happen with valid player list)
+        return currentIndex
     }
 }
