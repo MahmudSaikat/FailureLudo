@@ -1,3 +1,6 @@
 **/build/
 .idea/caches/
 .kotlin/
+.gradle/
+local.properties
+app/release/
