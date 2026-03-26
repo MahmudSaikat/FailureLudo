@@ -195,6 +195,17 @@ object GameRules {
                     doubleComponentRefsForStack(stack).map { ref -> CaptureTarget(ref.color, ref.pieceId) }
                 }
         } else {
+            val pairCaptureOnEnemyDouble = pairCaptureTargetsOnEnemyDouble(
+                piece = piece,
+                movingColor = movingColor,
+                destinationIndex = mainPos.index,
+                players = players,
+                mode = mode
+            )
+            if (pairCaptureOnEnemyDouble.isNotEmpty()) {
+                return pairCaptureOnEnemyDouble
+            }
+
             enemyStacks
                 .flatMap { stack ->
                     val doubleRefs = doubleComponentRefsForStack(stack)
@@ -206,6 +217,30 @@ object GameRules {
                         .map { ref -> CaptureTarget(ref.color, ref.pieceId) }
                 }
         }
+    }
+
+    private fun pairCaptureTargetsOnEnemyDouble(
+        piece: Piece,
+        movingColor: PlayerColor,
+        destinationIndex: Int,
+        players: List<Player>,
+        mode: GameMode
+    ): List<CaptureTarget> {
+        val ownSinglesAtCell = occupantsAtMainIndex(players, destinationIndex)
+            .filter { occupant ->
+                occupant.color == movingColor &&
+                    occupant.piece.id != piece.id
+            }
+
+        if (ownSinglesAtCell.isEmpty()) return emptyList()
+
+        val enemyDoubleTargets = enemyStacksAtIndex(destinationIndex, movingColor, players, mode)
+            .flatMap { stack ->
+                if (stack.size < 2) emptyList()
+                else doubleComponentRefsForStack(stack).toList()
+            }
+
+        return enemyDoubleTargets.map { ref -> CaptureTarget(ref.color, ref.pieceId) }
     }
 
     /**
