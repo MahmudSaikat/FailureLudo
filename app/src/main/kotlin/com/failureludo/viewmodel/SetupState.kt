@@ -3,6 +3,11 @@ package com.failureludo.viewmodel
 import com.failureludo.engine.GameMode
 import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
+import androidx.compose.ui.graphics.Color
+import com.failureludo.ui.theme.LudoBlue
+import com.failureludo.ui.theme.LudoGreen
+import com.failureludo.ui.theme.LudoRed
+import com.failureludo.ui.theme.LudoYellow
 
 /**
  * UI state for the Game Setup screen.
@@ -14,5 +19,13 @@ data class SetupState(
     ),
     val playerTypes: Map<PlayerColor, PlayerType> = PlayerColor.entries.associateWith { PlayerType.HUMAN },
     val playerNames: Map<PlayerColor, String> = PlayerColor.entries.associateWith { it.displayName },
+    val playerColors: Map<PlayerColor, Color> = defaultPlayerColors(),
     val mode: GameMode = GameMode.FREE_FOR_ALL
+)
+
+fun defaultPlayerColors(): Map<PlayerColor, Color> = mapOf(
+    PlayerColor.RED to LudoRed,
+    PlayerColor.BLUE to LudoBlue,
+    PlayerColor.YELLOW to LudoYellow,
+    PlayerColor.GREEN to LudoGreen
 )

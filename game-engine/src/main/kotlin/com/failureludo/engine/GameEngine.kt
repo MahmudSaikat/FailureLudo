@@ -54,7 +54,8 @@ object GameEngine {
             players = players,
             mode = mode,
             currentPlayerIndex = startIndex,
-            turnPhase = TurnPhase.WAITING_FOR_ROLL
+            turnPhase = TurnPhase.WAITING_FOR_ROLL,
+            diceByPlayer = PlayerColor.entries.associateWith { null }
         )
     }
 
@@ -75,9 +76,13 @@ object GameEngine {
         // Three consecutive 6s → forfeit turn
         if (diceValue == 6 && rollCount == 3) {
             val event = GameEvent.ConsecutiveSixesForfeit(state.currentPlayer.color)
+            val updatedDiceByPlayer = state.diceByPlayer.toMutableMap().apply {
+                this[state.currentPlayer.color] = diceValue
+            }
             return advanceToNextTurn(
                 state.copy(
                     lastDice = DiceResult(diceValue, rollCount),
+                    diceByPlayer = updatedDiceByPlayer,
                     eventLog = state.eventLog + event
                 )
             )
@@ -89,8 +94,13 @@ object GameEngine {
         val newPhase = if (movable.isEmpty()) TurnPhase.NO_MOVES_AVAILABLE
                        else TurnPhase.WAITING_FOR_PIECE_SELECTION
 
+        val updatedDiceByPlayer = state.diceByPlayer.toMutableMap().apply {
+            this[state.currentPlayer.color] = diceValue
+        }
+
         return state.copy(
             lastDice = diceResult,
+            diceByPlayer = updatedDiceByPlayer,
             movablePieces = movable,
             turnPhase = newPhase
         )

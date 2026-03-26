@@ -1,6 +1,8 @@
 package com.failureludo.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -15,6 +17,10 @@ import com.failureludo.viewmodel.GameViewModel
 fun AppNavigation(navController: NavHostController) {
     // Single shared ViewModel scoped to the nav graph
     val gameViewModel: GameViewModel = viewModel()
+    val gameState by gameViewModel.gameState.collectAsState()
+    val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
+
+    val hasActiveGame = gameState?.let { !it.isGameOver } ?: false
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
 
@@ -22,7 +28,8 @@ fun AppNavigation(navController: NavHostController) {
             HomeScreen(
                 onNewGame   = { navController.navigate(Screen.Setup.route) },
                 onResume    = { navController.navigate(Screen.Game.route) },
-                hasActiveGame = gameViewModel.hasActiveGame
+                hasActiveGame = hasActiveGame,
+                isSessionRestored = isSessionRestored
             )
         }
 

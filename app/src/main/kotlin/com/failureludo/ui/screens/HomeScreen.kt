@@ -18,7 +18,8 @@ import com.failureludo.ui.theme.*
 fun HomeScreen(
     onNewGame: () -> Unit,
     onResume: () -> Unit,
-    hasActiveGame: Boolean
+    hasActiveGame: Boolean,
+    isSessionRestored: Boolean
 ) {
     Box(
         modifier = Modifier
@@ -63,24 +64,33 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Button(
-                    onClick = onNewGame,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                ) {
-                    Text(
-                        text = "New Game",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = OnPrimary
-                    )
-                }
-
-                if (hasActiveGame) {
-                    OutlinedButton(
+                if (!isSessionRestored) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (hasActiveGame) {
+                    Button(
                         onClick = onResume,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                    ) {
+                        Text(
+                            text = "Resume Game",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = OnPrimary
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onNewGame,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
@@ -88,8 +98,23 @@ fun HomeScreen(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
                     ) {
                         Text(
-                            text = "Resume Game",
+                            text = "New Game",
                             style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onNewGame,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                    ) {
+                        Text(
+                            text = "New Game",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = OnPrimary
                         )
                     }
                 }

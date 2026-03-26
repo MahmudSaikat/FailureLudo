@@ -5,19 +5,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
+import com.failureludo.feedback.FeedbackEvent
+import com.failureludo.feedback.GameFeedbackManager
 import com.failureludo.ui.components.DiceView
 import com.failureludo.ui.components.LudoBoardCanvas
 import com.failureludo.ui.theme.*
@@ -31,6 +35,10 @@ fun GameBoardScreen(
     onQuit: () -> Unit
 ) {
     val state by viewModel.gameState.collectAsState()
+    val setup by viewModel.setupState.collectAsState()
+    val feedbackSettings by viewModel.feedbackSettings.collectAsState()
+    val haptics = LocalHapticFeedback.current
+    val feedbackManager = remember { GameFeedbackManager() }
 
     // Wire the game-over callback once
     LaunchedEffect(Unit) {
@@ -47,6 +55,62 @@ fun GameBoardScreen(
     val gameState = state!!
 
     var showQuitDialog by remember { mutableStateOf(false) }
+    var showFeedbackDialog by remember { mutableStateOf(false) }
+
+    var previousDiceSignature by remember { mutableStateOf<String?>(null) }
+    var previousEventSize by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(gameState, feedbackSettings) {
+        val diceSignature = gameState.lastDice?.let {
+            "${gameState.currentPlayer.color.name}-${it.value}-${it.rollCount}-${gameState.turnPhase.name}"
+        }
+        if (diceSignature != null && diceSignature != previousDiceSignature) {
+            feedbackManager.emitSound(FeedbackEvent.DICE_ROLL, feedbackSettings)
+            if (feedbackSettings.hapticsEnabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        }
+        previousDiceSignature = diceSignature
+
+        if (gameState.eventLog.size > previousEventSize) {
+            gameState.eventLog.subList(previousEventSize, gameState.eventLog.size).forEach { event ->
+                when (event) {
+                    is GameEvent.PieceCaptured -> {
+                        feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
+                        if (feedbackSettings.hapticsEnabled) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }
+
+                    is GameEvent.PieceFinished -> {
+                        feedbackManager.emitSound(FeedbackEvent.PIECE_FINISH, feedbackSettings)
+                    }
+
+                    is GameEvent.ExtraRollGranted -> {
+                        feedbackManager.emitSound(FeedbackEvent.EXTRA_ROLL, feedbackSettings)
+                    }
+
+                    is GameEvent.TurnSkipped,
+                    is GameEvent.ConsecutiveSixesForfeit -> {
+                        feedbackManager.emitSound(FeedbackEvent.TURN_SKIP, feedbackSettings)
+                    }
+
+                    is GameEvent.PlayerWon -> {
+                        feedbackManager.emitSound(FeedbackEvent.WIN, feedbackSettings)
+                        if (feedbackSettings.hapticsEnabled) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }
+
+                    is GameEvent.PieceMoved,
+                    is GameEvent.PieceEnteredBoard -> {
+                        feedbackManager.emitSound(FeedbackEvent.PIECE_MOVE, feedbackSettings)
+                    }
+                }
+            }
+        }
+        previousEventSize = gameState.eventLog.size
+    }
 
     if (showQuitDialog) {
         AlertDialog(
@@ -62,11 +126,22 @@ fun GameBoardScreen(
         )
     }
 
+    if (showFeedbackDialog) {
+        FeedbackSettingsDialog(
+            settings = feedbackSettings,
+            onSettingsChange = viewModel::updateFeedbackSettings,
+            onDismiss = { showFeedbackDialog = false }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Ludo") },
                 actions = {
+                    IconButton(onClick = { showFeedbackDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Feedback Settings", tint = OnPrimary)
+                    }
                     IconButton(onClick = { showQuitDialog = true }) {
                         Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Quit", tint = OnPrimary)
                     }
@@ -88,7 +163,7 @@ fun GameBoardScreen(
         ) {
 
             // Player turn indicator row
-            TurnIndicatorRow(gameState)
+            TurnIndicatorRow(gameState, setup.playerColors)
 
             // Board - takes as much space as possible (square)
             val movableSet = gameState.movablePieces
@@ -102,19 +177,99 @@ fun GameBoardScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                val boardSize = minOf(maxWidth, maxHeight)
-                LudoBoardCanvas(
-                    allPieces        = piecesMap,
-                    movablePieceIds  = movableSet,
-                    onPieceTapped    = { piece -> viewModel.selectPiece(piece) },
-                    modifier         = Modifier.size(boardSize)
+                val diceSize = (maxWidth * 0.12f).coerceIn(42.dp, 56.dp)
+                val railHeight = diceSize + 24.dp
+                val boardSize = minOf(
+                    maxWidth,
+                    (maxHeight - railHeight * 2).coerceAtLeast(140.dp)
                 )
+
+                val playersByColor = gameState.players.associateBy { it.color }
+
+                Column(
+                    modifier = Modifier.height(boardSize + railHeight * 2),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .width(boardSize)
+                            .height(railHeight),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        playersByColor[PlayerColor.RED]?.let { player ->
+                            SideRailDice(
+                                player = player,
+                                diceValue = gameState.diceByPlayer[player.color],
+                                isCurrent = player.color == gameState.currentPlayer.color,
+                                isRollable = player.color == gameState.currentPlayer.color &&
+                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                onRoll = { viewModel.rollDice() },
+                                size = diceSize
+                            )
+                        }
+                        playersByColor[PlayerColor.BLUE]?.let { player ->
+                            SideRailDice(
+                                player = player,
+                                diceValue = gameState.diceByPlayer[player.color],
+                                isCurrent = player.color == gameState.currentPlayer.color,
+                                isRollable = player.color == gameState.currentPlayer.color &&
+                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                onRoll = { viewModel.rollDice() },
+                                size = diceSize
+                            )
+                        }
+                    }
+
+                    LudoBoardCanvas(
+                        allPieces        = piecesMap,
+                        movablePieceIds  = movableSet,
+                        playerPalette    = setup.playerColors,
+                        onPieceTapped    = { piece -> viewModel.selectPiece(piece) },
+                        modifier         = Modifier.size(boardSize)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .width(boardSize)
+                            .height(railHeight),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        playersByColor[PlayerColor.GREEN]?.let { player ->
+                            SideRailDice(
+                                player = player,
+                                diceValue = gameState.diceByPlayer[player.color],
+                                isCurrent = player.color == gameState.currentPlayer.color,
+                                isRollable = player.color == gameState.currentPlayer.color &&
+                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                onRoll = { viewModel.rollDice() },
+                                size = diceSize
+                            )
+                        }
+                        playersByColor[PlayerColor.YELLOW]?.let { player ->
+                            SideRailDice(
+                                player = player,
+                                diceValue = gameState.diceByPlayer[player.color],
+                                isCurrent = player.color == gameState.currentPlayer.color,
+                                isRollable = player.color == gameState.currentPlayer.color &&
+                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
+                                onRoll = { viewModel.rollDice() },
+                                size = diceSize
+                            )
+                        }
+                    }
+                }
             }
 
-            // Bottom panel: status message + dice
+            // Bottom panel: status message
             BottomPanel(
-                gameState = gameState,
-                onRoll    = { viewModel.rollDice() }
+                gameState = gameState
             )
         }
     }
@@ -123,7 +278,7 @@ fun GameBoardScreen(
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun TurnIndicatorRow(state: GameState) {
+private fun TurnIndicatorRow(state: GameState, playerColors: Map<PlayerColor, Color>) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -131,15 +286,19 @@ private fun TurnIndicatorRow(state: GameState) {
     ) {
         state.players.filter { it.isActive }.forEach { player ->
             val isCurrent = player.color == state.currentPlayer.color
-            PlayerChip(player = player, isActive = isCurrent)
+            PlayerChip(player = player, isActive = isCurrent, playerColors = playerColors)
         }
     }
 }
 
 @Composable
-private fun PlayerChip(player: com.failureludo.engine.Player, isActive: Boolean) {
-    val bg     = if (isActive) playerColor(player.color) else playerColor(player.color).copy(0.25f)
-    val border = if (isActive) 2.dp else 0.dp
+private fun PlayerChip(
+    player: com.failureludo.engine.Player,
+    isActive: Boolean,
+    playerColors: Map<PlayerColor, Color>
+) {
+    val selectedColor = playerColor(player.color, playerColors)
+    val bg = if (isActive) selectedColor else selectedColor.copy(0.25f)
 
     Row(
         modifier = Modifier
@@ -177,9 +336,35 @@ private fun PlayerChip(player: com.failureludo.engine.Player, isActive: Boolean)
 }
 
 @Composable
-private fun BottomPanel(gameState: GameState, onRoll: () -> Unit) {
-    val isHumanTurn = gameState.currentPlayer.type == com.failureludo.engine.PlayerType.HUMAN
-    val canRoll     = gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL && isHumanTurn
+private fun SideRailDice(
+    player: com.failureludo.engine.Player,
+    diceValue: Int?,
+    isCurrent: Boolean,
+    isRollable: Boolean,
+    onRoll: () -> Unit,
+    size: androidx.compose.ui.unit.Dp
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        DiceView(
+            diceValue = diceValue,
+            isRollable = isRollable,
+            onRoll = onRoll,
+            size = size
+        )
+        Text(
+            text = player.color.displayName,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isCurrent) Primary else OnSurface.copy(alpha = 0.7f),
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun BottomPanel(gameState: GameState) {
 
     val statusText = when (gameState.turnPhase) {
         TurnPhase.WAITING_FOR_ROLL -> "${gameState.currentPlayer.name}'s turn — tap dice to roll"
@@ -205,22 +390,14 @@ private fun BottomPanel(gameState: GameState, onRoll: () -> Unit) {
         colors    = CardDefaults.cardColors(containerColor = Surface),
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            DiceView(
-                diceValue  = gameState.lastDice?.value,
-                isRollable = canRoll,
-                onRoll     = onRoll,
-                size       = 72.dp
-            )
-
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
@@ -239,4 +416,75 @@ private fun BottomPanel(gameState: GameState, onRoll: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun FeedbackSettingsDialog(
+    settings: FeedbackSettings,
+    onSettingsChange: (FeedbackSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Game Feedback") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Sound effects")
+                    Switch(
+                        checked = settings.soundEnabled,
+                        onCheckedChange = { enabled ->
+                            onSettingsChange(settings.copy(soundEnabled = enabled))
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Music")
+                    Switch(
+                        checked = settings.musicEnabled,
+                        onCheckedChange = { enabled ->
+                            onSettingsChange(settings.copy(musicEnabled = enabled))
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Haptics")
+                    Switch(
+                        checked = settings.hapticsEnabled,
+                        onCheckedChange = { enabled ->
+                            onSettingsChange(settings.copy(hapticsEnabled = enabled))
+                        }
+                    )
+                }
+
+                Text("Master volume: ${(settings.masterVolume * 100f).toInt()}%")
+                Slider(
+                    value = settings.masterVolume,
+                    onValueChange = { value ->
+                        onSettingsChange(settings.copy(masterVolume = value.coerceIn(0f, 1f)))
+                    },
+                    valueRange = 0f..1f
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        }
+    )
 }

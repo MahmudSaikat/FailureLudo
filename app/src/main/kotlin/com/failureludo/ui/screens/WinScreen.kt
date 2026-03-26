@@ -28,6 +28,7 @@ fun WinScreen(
     onMainMenu: () -> Unit
 ) {
     val state by viewModel.gameState.collectAsState()
+    val setup by viewModel.setupState.collectAsState()
     val winners = state?.winners ?: return
 
     val isTeamWin = state?.mode == GameMode.TEAM && winners.size > 1
@@ -73,7 +74,7 @@ fun WinScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
             ) {
                 winners.forEach { color ->
-                    WinnerColorBadge(color = color)
+                    WinnerColorBadge(color = color, playerColors = setup.playerColors)
                 }
             }
 
@@ -107,7 +108,7 @@ fun WinScreen(
                                         modifier = Modifier
                                             .size(28.dp)
                                             .clip(CircleShape)
-                                            .background(playerColor(player.color)),
+                                            .background(playerColor(player.color, setup.playerColors)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -131,8 +132,8 @@ fun WinScreen(
                                                     .size(14.dp)
                                                     .clip(CircleShape)
                                                     .background(
-                                                        if (finished) playerColor(player.color)
-                                                        else playerColor(player.color).copy(0.2f)
+                                                        if (finished) playerColor(player.color, setup.playerColors)
+                                                        else playerColor(player.color, setup.playerColors).copy(0.2f)
                                                     )
                                             )
                                         }
@@ -168,7 +169,7 @@ fun WinScreen(
 }
 
 @Composable
-private fun WinnerColorBadge(color: PlayerColor) {
+private fun WinnerColorBadge(color: PlayerColor, playerColors: Map<PlayerColor, Color>) {
     val infiniteTransition = rememberInfiniteTransition(label = "badge_${color.name}")
     val scale by infiniteTransition.animateFloat(
         initialValue  = 1f,
@@ -184,7 +185,7 @@ private fun WinnerColorBadge(color: PlayerColor) {
         modifier = Modifier
             .size((56 * scale).dp)
             .clip(CircleShape)
-            .background(playerColor(color)),
+            .background(playerColor(color, playerColors)),
         contentAlignment = Alignment.Center
     ) {
         Text(

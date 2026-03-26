@@ -1,7 +1,11 @@
 package com.failureludo.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.failureludo.data.FeedbackSettings
+import com.failureludo.data.GamePreferencesStore
+import com.failureludo.data.GameSessionStore
 import com.failureludo.engine.GameEngine
 import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
@@ -11,17 +15,55 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-class GameViewModel : ViewModel() {
+class GameViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val sessionStore = GameSessionStore(application.applicationContext)
+    private val preferencesStore = GamePreferencesStore(application.applicationContext)
 
     // ── Setup ─────────────────────────────────────────────────────────────────
 
     private val _setupState = MutableStateFlow(SetupState())
     val setupState: StateFlow<SetupState> = _setupState.asStateFlow()
 
+    private val _feedbackSettings = MutableStateFlow(FeedbackSettings())
+    val feedbackSettings: StateFlow<FeedbackSettings> = _feedbackSettings.asStateFlow()
+
+    private val _isSessionRestored = MutableStateFlow(false)
+    val isSessionRestored: StateFlow<Boolean> = _isSessionRestored.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            sessionStore.loadSetupState()?.let { restoredSetup ->
+                _setupState.value = restoredSetup
+            }
+            sessionStore.loadGameState()?.let { restoredGame ->
+                _gameState.value = restoredGame
+            }
+            _isSessionRestored.value = true
+        }
+
+        viewModelScope.launch {
+            preferencesStore.feedbackSettings.collectLatest { settings ->
+                _feedbackSettings.value = settings
+            }
+        }
+    }
+
     fun updateSetup(newSetup: SetupState) {
         _setupState.value = newSetup
+        viewModelScope.launch {
+            sessionStore.saveSetupState(newSetup)
+        }
+    }
+
+    fun updateFeedbackSettings(newSettings: FeedbackSettings) {
+        _feedbackSettings.value = newSettings
+        viewModelScope.launch {
+            preferencesStore.updateFeedbackSettings(newSettings)
+        }
     }
 
     // ── Game ──────────────────────────────────────────────────────────────────
@@ -45,7 +87,10 @@ class GameViewModel : ViewModel() {
             playerNames  = setup.playerNames,
             mode         = setup.mode
         )
-        _gameState.value = newState
+        setGameState(newState)
+        viewModelScope.launch {
+            sessionStore.saveSetupState(setup)
+        }
         checkForBotTurn()
     }
 
@@ -58,7 +103,7 @@ class GameViewModel : ViewModel() {
         if (state.turnPhase != TurnPhase.WAITING_FOR_ROLL) return
 
         val newState = GameEngine.rollDice(state)
-        _gameState.value = newState
+        setGameState(newState)
 
         when (newState.turnPhase) {
             TurnPhase.NO_MOVES_AVAILABLE -> {
@@ -85,7 +130,7 @@ class GameViewModel : ViewModel() {
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
 
         val newState = GameEngine.selectPiece(state, piece)
-        _gameState.value = newState
+        setGameState(newState)
 
         if (newState.isGameOver) {
             onGameOver?.invoke()
@@ -103,8 +148,15 @@ class GameViewModel : ViewModel() {
         if (state.turnPhase != TurnPhase.NO_MOVES_AVAILABLE) return
 
         val newState = GameEngine.advanceNoMoves(state)
-        _gameState.value = newState
+        setGameState(newState)
         checkForBotTurn()
+    }
+
+    private fun setGameState(newState: GameState?) {
+        _gameState.value = newState
+        viewModelScope.launch {
+            sessionStore.saveGameState(newState)
+        }
     }
 
     private fun checkForBotTurn() {

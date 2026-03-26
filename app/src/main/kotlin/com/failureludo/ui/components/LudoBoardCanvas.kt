@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -26,6 +27,7 @@ private const val GRID = 15
 fun LudoBoardCanvas(
     allPieces: Map<PlayerColor, List<Piece>>,
     movablePieceIds: Set<Pair<PlayerColor, Int>>,  // (color, pieceId) pairs that can move
+    playerPalette: Map<PlayerColor, Color> = emptyMap(),
     onPieceTapped: (Piece) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -54,24 +56,25 @@ fun LudoBoardCanvas(
         }
     ) {
         val cellSize = size.width / GRID.toFloat()
-        drawBoard(cellSize)
-        drawHomeYards(cellSize)
-        drawHomeColumns(cellSize)
-        drawCenter(cellSize)
-        drawAllPieces(allPieces, movablePieceIds, cellSize, textMeasurer)
+        drawBoard(cellSize, playerPalette)
+        drawDirectionMarkers(cellSize, playerPalette)
+        drawHomeYards(cellSize, playerPalette)
+        drawHomeColumns(cellSize, playerPalette)
+        drawCenter(cellSize, playerPalette)
+        drawAllPieces(allPieces, movablePieceIds, cellSize, textMeasurer, playerPalette)
     }
 }
 
 // ── Board drawing ─────────────────────────────────────────────────────────────
 
-private fun DrawScope.drawBoard(cellSize: Float) {
+private fun DrawScope.drawBoard(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
     // Background
     drawRect(color = BoardWhite)
 
     // Draw all 225 cells
     for (row in 0 until GRID) {
         for (col in 0 until GRID) {
-            val color = cellColor(row, col)
+            val color = cellColor(row, col, playerPalette)
             drawRoundRect(
                 color       = color,
                 topLeft     = Offset(col * cellSize, row * cellSize),
@@ -88,20 +91,59 @@ private fun DrawScope.drawBoard(cellSize: Float) {
         }
     }
 
-    // Safe-square star marker
+    // Safe-square marker
     BoardCoordinates.MAIN_TRACK.forEachIndexed { index, (row, col) ->
         if (index in com.failureludo.engine.Board.SAFE_SQUARES) {
-            drawSafeStar(col * cellSize, row * cellSize, cellSize)
+            drawSafeStar(
+                x = col * cellSize,
+                y = row * cellSize,
+                cellSize = cellSize,
+                color = safeSquareColor(index, playerPalette)
+            )
         }
     }
 }
 
-private fun DrawScope.drawHomeYards(cellSize: Float) {
+private fun DrawScope.drawDirectionMarkers(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
+    val entryDirections = mapOf(
+        PlayerColor.RED to (1f to 0f),
+        PlayerColor.BLUE to (0f to 1f),
+        PlayerColor.YELLOW to (-1f to 0f),
+        PlayerColor.GREEN to (0f to -1f)
+    )
+
+    PlayerColor.entries.forEach { color ->
+        val entryIndex = color.entryPosition
+        val entryCell = BoardCoordinates.MAIN_TRACK.getOrNull(entryIndex) ?: return@forEach
+        val entryDir = entryDirections[color] ?: (0f to 0f)
+
+        drawArrowOnCell(
+            row = entryCell.first,
+            col = entryCell.second,
+            dx = entryDir.first,
+            dy = entryDir.second,
+            cellSize = cellSize,
+            color = playerColor(color, playerPalette).copy(alpha = 0.9f)
+        )
+
+        val homeEntryCell = BoardCoordinates.HOME_COLUMNS[color]?.firstOrNull() ?: return@forEach
+        drawArrowOnCell(
+            row = homeEntryCell.first,
+            col = homeEntryCell.second,
+            dx = entryDir.first,
+            dy = entryDir.second,
+            cellSize = cellSize,
+            color = playerColor(color, playerPalette).copy(alpha = 0.9f)
+        )
+    }
+}
+
+private fun DrawScope.drawHomeYards(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
     PlayerColor.entries.forEach { color ->
         val yardTopLeft = yardTopLeft(color)
         // Large coloured yard area: 6x6 minus the track border
         drawRoundRect(
-            color       = playerColor(color).copy(alpha = 0.85f),
+            color       = playerColor(color, playerPalette).copy(alpha = 0.85f),
             topLeft     = Offset(yardTopLeft.second * cellSize, yardTopLeft.first * cellSize),
             size        = Size(6 * cellSize, 6 * cellSize),
             cornerRadius = CornerRadius(8f)
@@ -120,12 +162,12 @@ private fun DrawScope.drawHomeYards(cellSize: Float) {
     }
 }
 
-private fun DrawScope.drawHomeColumns(cellSize: Float) {
+private fun DrawScope.drawHomeColumns(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
     PlayerColor.entries.forEach { color ->
         val cells = BoardCoordinates.HOME_COLUMNS[color] ?: return@forEach
         cells.forEach { (row, col) ->
             drawRoundRect(
-                color       = playerColor(color).copy(alpha = 0.7f),
+                color       = playerColor(color, playerPalette).copy(alpha = 0.7f),
                 topLeft     = Offset(col * cellSize + 2f, row * cellSize + 2f),
                 size        = Size(cellSize - 4f, cellSize - 4f),
                 cornerRadius = CornerRadius(4f)
@@ -134,7 +176,7 @@ private fun DrawScope.drawHomeColumns(cellSize: Float) {
     }
 }
 
-private fun DrawScope.drawCenter(cellSize: Float) {
+private fun DrawScope.drawCenter(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
     val (row, col) = BoardCoordinates.CENTER
     val cx = (col + 0.5f) * cellSize
     val cy = (row + 0.5f) * cellSize
@@ -142,13 +184,11 @@ private fun DrawScope.drawCenter(cellSize: Float) {
 
     // Draw 4 coloured triangles pointing inward
     // Simplified: draw 4 coloured quadrants
-    val colors = listOf(LudoRed, LudoBlue, LudoYellow, LudoGreen)
-    // Top-left = Red, Top-right = Blue, Bottom-right = Yellow, Bottom-left = Green
     val quads = listOf(
-        Triple(LudoRed,    Offset(cx - half, cy - half), Size(half, half)),
-        Triple(LudoBlue,   Offset(cx,        cy - half), Size(half, half)),
-        Triple(LudoYellow, Offset(cx,        cy),        Size(half, half)),
-        Triple(LudoGreen,  Offset(cx - half, cy),        Size(half, half))
+        Triple(playerColor(PlayerColor.RED, playerPalette), Offset(cx - half, cy - half), Size(half, half)),
+        Triple(playerColor(PlayerColor.BLUE, playerPalette), Offset(cx, cy - half), Size(half, half)),
+        Triple(playerColor(PlayerColor.YELLOW, playerPalette), Offset(cx, cy), Size(half, half)),
+        Triple(playerColor(PlayerColor.GREEN, playerPalette), Offset(cx - half, cy), Size(half, half))
     )
     quads.forEach { (clr, offset, size) ->
         drawRect(color = clr.copy(alpha = 0.8f), topLeft = offset, size = size)
@@ -159,10 +199,59 @@ private fun DrawScope.drawCenter(cellSize: Float) {
     drawCircle(color = Secondary.copy(alpha = 0.5f), radius = cellSize * 0.5f, center = Offset(cx, cy))
 }
 
-private fun DrawScope.drawSafeStar(x: Float, y: Float, cellSize: Float) {
+private fun DrawScope.drawSafeStar(x: Float, y: Float, cellSize: Float, color: Color) {
     val cx = x + cellSize / 2
     val cy = y + cellSize / 2
-    drawCircle(color = Color.Gray.copy(alpha = 0.25f), radius = cellSize * 0.35f, center = Offset(cx, cy))
+
+    drawCircle(
+        color = color.copy(alpha = 0.20f),
+        radius = cellSize * 0.35f,
+        center = Offset(cx, cy)
+    )
+    drawCircle(
+        color = color.copy(alpha = 0.85f),
+        radius = cellSize * 0.35f,
+        center = Offset(cx, cy),
+        style = Stroke(width = cellSize * 0.06f)
+    )
+
+    val markerRadius = cellSize * 0.12f
+    drawCircle(
+        color = Color.White.copy(alpha = 0.95f),
+        radius = markerRadius,
+        center = Offset(cx, cy)
+    )
+}
+
+private fun DrawScope.drawArrowOnCell(
+    row: Int,
+    col: Int,
+    dx: Float,
+    dy: Float,
+    cellSize: Float,
+    color: Color
+) {
+    val centerX = (col + 0.5f) * cellSize
+    val centerY = (row + 0.5f) * cellSize
+    val length = cellSize * 0.26f
+    val width = cellSize * 0.12f
+
+    val tip = Offset(centerX + dx * length, centerY + dy * length)
+    val base = Offset(centerX - dx * length * 0.5f, centerY - dy * length * 0.5f)
+
+    val perpendicular = Offset(-dy * width, dx * width)
+    val p1 = Offset(base.x + perpendicular.x, base.y + perpendicular.y)
+    val p2 = Offset(base.x - perpendicular.x, base.y - perpendicular.y)
+
+    val path = Path().apply {
+        moveTo(tip.x, tip.y)
+        lineTo(p1.x, p1.y)
+        lineTo(p2.x, p2.y)
+        close()
+    }
+
+    drawPath(path = path, color = Color.White.copy(alpha = 0.95f))
+    drawPath(path = path, color = color.copy(alpha = 0.85f), style = Stroke(width = cellSize * 0.04f))
 }
 
 // ── Piece drawing ─────────────────────────────────────────────────────────────
@@ -171,7 +260,8 @@ private fun DrawScope.drawAllPieces(
     allPieces: Map<PlayerColor, List<Piece>>,
     movable: Set<Pair<PlayerColor, Int>>,
     cellSize: Float,
-    textMeasurer: TextMeasurer
+    textMeasurer: TextMeasurer,
+    playerPalette: Map<PlayerColor, Color>
 ) {
     // Group pieces by cell to handle stacking
     val cellMap = mutableMapOf<Pair<Int, Int>, MutableList<Piece>>()
@@ -219,7 +309,7 @@ private fun DrawScope.drawAllPieces(
             }
 
             // Piece body
-            drawCircle(color = playerColor(piece.color), radius = radius, center = Offset(cx, cy))
+            drawCircle(color = playerColor(piece.color, playerPalette), radius = radius, center = Offset(cx, cy))
             drawCircle(
                 color  = Color.Black.copy(alpha = 0.3f),
                 radius = radius,
@@ -249,12 +339,12 @@ private fun DrawScope.drawAllPieces(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Returns the background colour to paint for a given (row, col) cell. */
-private fun cellColor(row: Int, col: Int): Color {
+private fun cellColor(row: Int, col: Int, playerPalette: Map<PlayerColor, Color>): Color {
     // Home yards
-    if (row in 0..5 && col in 0..5)   return LudoRedLight
-    if (row in 0..5 && col in 9..14)  return LudoBlueLight
-    if (row in 9..14 && col in 9..14) return LudoYellowLight
-    if (row in 9..14 && col in 0..5)  return LudoGreenLight
+    if (row in 0..5 && col in 0..5)   return playerColorLight(PlayerColor.RED, playerPalette)
+    if (row in 0..5 && col in 9..14)  return playerColorLight(PlayerColor.BLUE, playerPalette)
+    if (row in 9..14 && col in 9..14) return playerColorLight(PlayerColor.YELLOW, playerPalette)
+    if (row in 9..14 && col in 0..5)  return playerColorLight(PlayerColor.GREEN, playerPalette)
 
     // Center 3x3 region (rows 6-8, cols 6-8) — drawn separately
     if (row in 6..8 && col in 6..8) return Color.Transparent
@@ -268,4 +358,14 @@ private fun yardTopLeft(color: PlayerColor): Pair<Int, Int> = when (color) {
     PlayerColor.BLUE   -> 0 to 9
     PlayerColor.YELLOW -> 9 to 9
     PlayerColor.GREEN  -> 9 to 0
+}
+
+private fun safeSquareColor(index: Int, playerPalette: Map<PlayerColor, Color>): Color {
+    return when (index) {
+        0, 8 -> playerColor(PlayerColor.RED, playerPalette)
+        13, 21 -> playerColor(PlayerColor.BLUE, playerPalette)
+        26, 34 -> playerColor(PlayerColor.YELLOW, playerPalette)
+        39, 47 -> playerColor(PlayerColor.GREEN, playerPalette)
+        else -> Color.Gray
+    }
 }

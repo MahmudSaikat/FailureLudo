@@ -30,6 +30,7 @@ data class GameState(
     val currentPlayerIndex: Int = 0,
     val turnPhase: TurnPhase = TurnPhase.WAITING_FOR_ROLL,
     val lastDice: DiceResult? = null,
+    val diceByPlayer: Map<PlayerColor, Int?> = PlayerColor.entries.associateWith { null },
     val movablePieces: List<Piece> = emptyList(),
     val winners: List<PlayerColor>? = null,
     /** History of significant events for display (e.g. "Red captured Green"). */

@@ -18,12 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.failureludo.engine.GameMode
 import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
 import com.failureludo.ui.theme.*
+import com.failureludo.viewmodel.defaultPlayerColors
 import com.failureludo.viewmodel.GameViewModel
 import com.failureludo.viewmodel.SetupState
 
@@ -74,6 +76,26 @@ fun GameSetupScreen(
                     }
                 )
             }
+
+            PlayerColorSection(
+                playerColors = setup.playerColors,
+                onColorChange = { playerColor, selectedColor ->
+                    val updated = setup.playerColors.toMutableMap()
+                    val swappedSeat = updated.entries.firstOrNull {
+                        it.key != playerColor && it.value == selectedColor
+                    }?.key
+
+                    if (swappedSeat != null) {
+                        updated[swappedSeat] = updated[playerColor] ?: selectedColor
+                    }
+
+                    updated[playerColor] = selectedColor
+                    viewModel.updateSetup(setup.copy(playerColors = updated))
+                },
+                onResetDefaults = {
+                    viewModel.updateSetup(setup.copy(playerColors = defaultPlayerColors()))
+                }
+            )
 
             // Per-player configuration
             Text(
@@ -205,6 +227,96 @@ private fun PlayerCountSection(
 }
 
 @Composable
+private fun PlayerColorSection(
+    playerColors: Map<PlayerColor, Color>,
+    onColorChange: (PlayerColor, Color) -> Unit,
+    onResetDefaults: () -> Unit
+) {
+    val selectableColors = remember {
+        listOf(
+            Color.hsv(0f, 0.78f, 0.86f),
+            Color.hsv(30f, 0.80f, 0.90f),
+            Color.hsv(50f, 0.75f, 0.92f),
+            Color.hsv(85f, 0.70f, 0.84f),
+            Color.hsv(120f, 0.70f, 0.82f),
+            Color.hsv(165f, 0.75f, 0.78f),
+            Color.hsv(200f, 0.75f, 0.90f),
+            Color.hsv(235f, 0.73f, 0.88f),
+            Color.hsv(275f, 0.70f, 0.84f),
+            Color.hsv(310f, 0.70f, 0.84f),
+            Color.hsv(340f, 0.72f, 0.88f),
+            Color.hsv(15f, 0.55f, 0.72f)
+        )
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Player Colors",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Primary
+            )
+            TextButton(onClick = onResetDefaults) {
+                Text("Reset Defaults")
+            }
+        }
+
+        PlayerColor.entries.forEach { seat ->
+            val selected = playerColors[seat] ?: playerColor(seat)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(selected)
+                            .border(1.dp, Color.Black.copy(alpha = 0.25f), CircleShape)
+                    )
+                    Text(
+                        text = "${seat.displayName} Player",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = OnSurface
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    selectableColors.forEach { option ->
+                        val isSelected = option == selected
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(option)
+                                .border(
+                                    width = if (isSelected) 3.dp else 1.dp,
+                                    color = if (isSelected) Primary else Color.Black.copy(alpha = 0.2f),
+                                    shape = CircleShape
+                                )
+                                .clickable { onColorChange(seat, option) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            "Selecting an already-used color swaps it between players.",
+            style = MaterialTheme.typography.bodySmall,
+            color = OnSurface.copy(alpha = 0.65f)
+        )
+    }
+}
+
+@Composable
 private fun PlayerRow(
     color: PlayerColor,
     name: String,
@@ -280,16 +392,27 @@ private fun PlayerRow(
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-fun playerColor(color: PlayerColor): Color = when (color) {
-    PlayerColor.RED    -> LudoRed
-    PlayerColor.BLUE   -> LudoBlue
-    PlayerColor.YELLOW -> LudoYellow
-    PlayerColor.GREEN  -> LudoGreen
+fun playerColor(color: PlayerColor, palette: Map<PlayerColor, Color>? = null): Color {
+    val custom = palette?.get(color)
+    if (custom != null) return custom
+
+    return when (color) {
+        PlayerColor.RED    -> LudoRed
+        PlayerColor.BLUE   -> LudoBlue
+        PlayerColor.YELLOW -> LudoYellow
+        PlayerColor.GREEN  -> LudoGreen
+    }
 }
 
-fun playerColorLight(color: PlayerColor): Color = when (color) {
-    PlayerColor.RED    -> LudoRedLight
-    PlayerColor.BLUE   -> LudoBlueLight
-    PlayerColor.YELLOW -> LudoYellowLight
-    PlayerColor.GREEN  -> LudoGreenLight
+fun playerColorLight(color: PlayerColor, palette: Map<PlayerColor, Color>? = null): Color {
+    if (palette == null) {
+        return when (color) {
+            PlayerColor.RED    -> LudoRedLight
+            PlayerColor.BLUE   -> LudoBlueLight
+            PlayerColor.YELLOW -> LudoYellowLight
+            PlayerColor.GREEN  -> LudoGreenLight
+        }
+    }
+
+    return lerp(playerColor(color, palette), Color.White, 0.72f)
 }
