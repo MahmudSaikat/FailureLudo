@@ -12,8 +12,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.failureludo.engine.GameMode
@@ -30,6 +33,9 @@ fun WinScreen(
     val state by viewModel.gameState.collectAsState()
     val setup by viewModel.setupState.collectAsState()
     val winners = state?.winners ?: return
+    val winnerPlayers = state?.players
+        ?.filter { it.isActive && it.id in winners }
+        .orEmpty()
 
     val isTeamWin = state?.mode == GameMode.TEAM && winners.size > 1
 
@@ -62,19 +68,26 @@ fun WinScreen(
 
             // Win title
             Text(
-                text  = if (isTeamWin) "Team Wins!" else "${winners.first().displayName} Wins!",
+                text  = if (isTeamWin) {
+                    val teamNames = winnerPlayers.joinToString(" & ") { it.name }
+                    if (teamNames.isBlank()) "Team Wins!" else "$teamNames Win!"
+                } else {
+                    "${winnerPlayers.firstOrNull()?.name ?: "Winner"} Wins!"
+                },
                 style = MaterialTheme.typography.headlineLarge,
                 color = Primary,
                 fontWeight = FontWeight.ExtraBold,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
             // Winner colour circles
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
             ) {
-                winners.forEach { color ->
-                    WinnerColorBadge(color = color, playerColors = setup.playerColors)
+                winnerPlayers.forEach { winner ->
+                    WinnerColorBadge(player = winner, playerColors = setup.playerColors)
                 }
             }
 
@@ -112,7 +125,7 @@ fun WinScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            player.color.displayName.first().toString(),
+                                            player.id.value.toString(),
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             style = MaterialTheme.typography.labelLarge
@@ -121,7 +134,9 @@ fun WinScreen(
                                     Text(
                                         player.name,
                                         modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodyLarge
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                     // Piece progress dots
                                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -169,8 +184,8 @@ fun WinScreen(
 }
 
 @Composable
-private fun WinnerColorBadge(color: PlayerColor, playerColors: Map<PlayerColor, Color>) {
-    val infiniteTransition = rememberInfiniteTransition(label = "badge_${color.name}")
+private fun WinnerColorBadge(player: com.failureludo.engine.Player, playerColors: Map<PlayerColor, Color>) {
+    val infiniteTransition = rememberInfiniteTransition(label = "badge_${player.id.value}")
     val scale by infiniteTransition.animateFloat(
         initialValue  = 1f,
         targetValue   = 1.15f,
@@ -178,18 +193,21 @@ private fun WinnerColorBadge(color: PlayerColor, playerColors: Map<PlayerColor, 
             animation  = tween(600),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "badge_scale_${color.name}"
+        label = "badge_scale_${player.id.value}"
     )
 
     Box(
         modifier = Modifier
             .size((56 * scale).dp)
             .clip(CircleShape)
-            .background(playerColor(color, playerColors)),
+            .background(playerColor(player.color, playerColors))
+            .semantics {
+                contentDescription = "Winner ${player.name}, player ${player.id.value}"
+            },
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text  = color.displayName.first().toString(),
+            text  = player.id.value.toString(),
             color = Color.White,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 24.sp

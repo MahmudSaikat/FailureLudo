@@ -31,9 +31,10 @@ data class GameState(
     val currentPlayerIndex: Int = 0,
     val turnPhase: TurnPhase = TurnPhase.WAITING_FOR_ROLL,
     val lastDice: DiceResult? = null,
-    val diceByPlayer: Map<PlayerColor, Int?> = PlayerColor.entries.associateWith { null },
+    val diceByPlayer: Map<PlayerId, Int?> = PlayerColor.entries
+        .associate { PlayerId(it.ordinal + 1) to null },
     val movablePieces: List<Piece> = emptyList(),
-    val winners: List<PlayerColor>? = null,
+    val winners: List<PlayerId>? = null,
     /** History of significant events for display (e.g. "Red captured Green"). */
     val eventLog: List<GameEvent> = emptyList()
 ) {
@@ -43,12 +44,17 @@ data class GameState(
 
 /** A notable event that happened during the game. */
 sealed class GameEvent {
-    data class PieceMoved(val color: PlayerColor, val pieceId: Int) : GameEvent()
-    data class PieceEnteredBoard(val color: PlayerColor, val pieceId: Int) : GameEvent()
-    data class PieceCaptured(val capturedColor: PlayerColor, val byColor: PlayerColor) : GameEvent()
-    data class PieceFinished(val color: PlayerColor, val pieceId: Int) : GameEvent()
-    data class PlayerWon(val colors: List<PlayerColor>) : GameEvent()
-    data class ExtraRollGranted(val color: PlayerColor, val reason: String) : GameEvent()
-    data class TurnSkipped(val color: PlayerColor) : GameEvent()
-    data class ConsecutiveSixesForfeit(val color: PlayerColor) : GameEvent()
+    data class PieceMoved(val playerId: PlayerId, val color: PlayerColor, val pieceId: Int) : GameEvent()
+    data class PieceEnteredBoard(val playerId: PlayerId, val color: PlayerColor, val pieceId: Int) : GameEvent()
+    data class PieceCaptured(
+        val capturedPlayerId: PlayerId,
+        val capturedColor: PlayerColor,
+        val byPlayerId: PlayerId,
+        val byColor: PlayerColor
+    ) : GameEvent()
+    data class PieceFinished(val playerId: PlayerId, val color: PlayerColor, val pieceId: Int) : GameEvent()
+    data class PlayerWon(val playerIds: List<PlayerId>) : GameEvent()
+    data class ExtraRollGranted(val playerId: PlayerId, val color: PlayerColor, val reason: String) : GameEvent()
+    data class TurnSkipped(val playerId: PlayerId, val color: PlayerColor) : GameEvent()
+    data class ConsecutiveSixesForfeit(val playerId: PlayerId, val color: PlayerColor) : GameEvent()
 }

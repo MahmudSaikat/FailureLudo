@@ -40,8 +40,9 @@ object GameEngine {
         // All 4 colours are always created; inactive ones are just marked inactive
         val players = PlayerColor.entries.map { color ->
             Player(
+                id = PlayerId(color.ordinal + 1),
                 color = color,
-                name = playerNames[color] ?: color.displayName,
+                name = playerNames[color] ?: "Player-${color.ordinal + 1}",
                 type = playerTypes[color] ?: PlayerType.HUMAN,
                 isActive = color in activeColors
             )
@@ -56,7 +57,7 @@ object GameEngine {
             moveCounter = 0L,
             currentPlayerIndex = startIndex,
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
-            diceByPlayer = PlayerColor.entries.associateWith { null }
+            diceByPlayer = PlayerColor.entries.associate { PlayerId(it.ordinal + 1) to null }
         )
     }
 
@@ -76,9 +77,12 @@ object GameEngine {
 
         // Three consecutive 6s → forfeit turn
         if (diceValue == 6 && rollCount == 3) {
-            val event = GameEvent.ConsecutiveSixesForfeit(state.currentPlayer.color)
+            val event = GameEvent.ConsecutiveSixesForfeit(
+                playerId = state.currentPlayer.id,
+                color = state.currentPlayer.color
+            )
             val updatedDiceByPlayer = state.diceByPlayer.toMutableMap().apply {
-                this[state.currentPlayer.color] = diceValue
+                this[state.currentPlayer.id] = diceValue
             }
             return advanceToNextTurn(
                 state.copy(
@@ -96,7 +100,7 @@ object GameEngine {
                        else TurnPhase.WAITING_FOR_PIECE_SELECTION
 
         val updatedDiceByPlayer = state.diceByPlayer.toMutableMap().apply {
-            this[state.currentPlayer.color] = diceValue
+            this[state.currentPlayer.id] = diceValue
         }
 
         return state.copy(
@@ -112,7 +116,10 @@ object GameEngine {
      */
     fun advanceNoMoves(state: GameState): GameState {
         require(state.turnPhase == TurnPhase.NO_MOVES_AVAILABLE)
-        val event = GameEvent.TurnSkipped(state.currentPlayer.color)
+        val event = GameEvent.TurnSkipped(
+            playerId = state.currentPlayer.id,
+            color = state.currentPlayer.color
+        )
         return advanceToNextTurn(state.copy(eventLog = state.eventLog + event))
     }
 
@@ -132,6 +139,7 @@ object GameEngine {
         require(piece in state.movablePieces) { "Piece ${piece.id} is not movable." }
 
         val diceValue = state.lastDice!!.value
+        val playerId = state.currentPlayer.id
         val color = state.currentPlayer.color
 
         // Compute destination
@@ -156,13 +164,25 @@ object GameEngine {
         // Build event list
         val events = mutableListOf<GameEvent>()
         val isEntering = piece.position is PiecePosition.HomeBase
-        if (isEntering) events += GameEvent.PieceEnteredBoard(color, piece.id)
-        else events += GameEvent.PieceMoved(color, piece.id)
-        if (destination is PiecePosition.Finished) events += GameEvent.PieceFinished(color, piece.id)
+        if (isEntering) {
+            events += GameEvent.PieceEnteredBoard(playerId = playerId, color = color, pieceId = piece.id)
+        } else {
+            events += GameEvent.PieceMoved(playerId = playerId, color = color, pieceId = piece.id)
+        }
+        if (destination is PiecePosition.Finished) {
+            events += GameEvent.PieceFinished(playerId = playerId, color = color, pieceId = piece.id)
+        }
 
         // Capture events
         captureTargets.forEach { target ->
-            events += GameEvent.PieceCaptured(target.color, color)
+            val capturedPlayerId = state.players.firstOrNull { it.color == target.color }?.id
+                ?: error("Captured player not found for color ${target.color}")
+            events += GameEvent.PieceCaptured(
+                capturedPlayerId = capturedPlayerId,
+                capturedColor = target.color,
+                byPlayerId = playerId,
+                byColor = color
+            )
         }
 
         val newState = state.copy(
@@ -190,7 +210,11 @@ object GameEngine {
             newState.copy(
                 turnPhase = TurnPhase.WAITING_FOR_ROLL,
                 lastDice = DiceResult(diceValue, state.lastDice.rollCount),
-                eventLog = newState.eventLog + GameEvent.ExtraRollGranted(color, reason)
+                eventLog = newState.eventLog + GameEvent.ExtraRollGranted(
+                    playerId = playerId,
+                    color = color,
+                    reason = reason
+                )
             )
         } else {
             advanceToNextTurn(newState)

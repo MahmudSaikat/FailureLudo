@@ -21,6 +21,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.failureludo.data.FeedbackSettings
@@ -128,7 +131,7 @@ fun GameBoardScreen(
 
     LaunchedEffect(gameState, feedbackSettings) {
         val diceSignature = gameState.lastDice?.let {
-            "${gameState.currentPlayer.color.name}-${it.value}-${it.rollCount}-${gameState.turnPhase.name}"
+            "${gameState.currentPlayer.id.value}-${it.value}-${it.rollCount}-${gameState.turnPhase.name}"
         }
         if (diceSignature != null && diceSignature != previousDiceSignature) {
             feedbackManager.emitSound(FeedbackEvent.DICE_ROLL, feedbackSettings)
@@ -289,9 +292,9 @@ fun GameBoardScreen(
                         playersByColor[PlayerColor.RED]?.let { player ->
                             SideRailDice(
                                 player = player,
-                                diceValue = gameState.diceByPlayer[player.color],
-                                isCurrent = player.color == gameState.currentPlayer.color,
-                                isRollable = player.color == gameState.currentPlayer.color &&
+                                diceValue = gameState.diceByPlayer[player.id],
+                                isCurrent = player.id == gameState.currentPlayer.id,
+                                isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
                                 onRoll = { viewModel.rollDice() },
@@ -301,9 +304,9 @@ fun GameBoardScreen(
                         playersByColor[PlayerColor.BLUE]?.let { player ->
                             SideRailDice(
                                 player = player,
-                                diceValue = gameState.diceByPlayer[player.color],
-                                isCurrent = player.color == gameState.currentPlayer.color,
-                                isRollable = player.color == gameState.currentPlayer.color &&
+                                diceValue = gameState.diceByPlayer[player.id],
+                                isCurrent = player.id == gameState.currentPlayer.id,
+                                isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
                                 onRoll = { viewModel.rollDice() },
@@ -340,6 +343,13 @@ fun GameBoardScreen(
                             tint = finishFxColor,
                             modifier = Modifier.matchParentSize()
                         )
+
+                        BoardSeatNamesOverlay(
+                            playersByColor = playersByColor,
+                            currentPlayerId = gameState.currentPlayer.id,
+                            playerColors = setup.playerColors,
+                            modifier = Modifier.matchParentSize()
+                        )
                     }
 
                     Row(
@@ -352,9 +362,9 @@ fun GameBoardScreen(
                         playersByColor[PlayerColor.GREEN]?.let { player ->
                             SideRailDice(
                                 player = player,
-                                diceValue = gameState.diceByPlayer[player.color],
-                                isCurrent = player.color == gameState.currentPlayer.color,
-                                isRollable = player.color == gameState.currentPlayer.color &&
+                                diceValue = gameState.diceByPlayer[player.id],
+                                isCurrent = player.id == gameState.currentPlayer.id,
+                                isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
                                 onRoll = { viewModel.rollDice() },
@@ -364,9 +374,9 @@ fun GameBoardScreen(
                         playersByColor[PlayerColor.YELLOW]?.let { player ->
                             SideRailDice(
                                 player = player,
-                                diceValue = gameState.diceByPlayer[player.color],
-                                isCurrent = player.color == gameState.currentPlayer.color,
-                                isRollable = player.color == gameState.currentPlayer.color &&
+                                diceValue = gameState.diceByPlayer[player.id],
+                                isCurrent = player.id == gameState.currentPlayer.id,
+                                isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
                                 onRoll = { viewModel.rollDice() },
@@ -489,7 +499,7 @@ private fun TurnIndicatorRow(state: GameState, playerColors: Map<PlayerColor, Co
         verticalAlignment = Alignment.CenterVertically
     ) {
         state.players.filter { it.isActive }.forEach { player ->
-            val isCurrent = player.color == state.currentPlayer.color
+            val isCurrent = player.id == state.currentPlayer.id
             PlayerChip(player = player, isActive = isCurrent, playerColors = playerColors)
         }
     }
@@ -508,6 +518,15 @@ private fun PlayerChip(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(bg)
+            .semantics {
+                contentDescription = buildString {
+                    append(player.name)
+                    append(if (isActive) ", current turn" else ", waiting")
+                    if (player.finishedPieceCount > 0) {
+                        append(", ${player.finishedPieceCount} finished pawns")
+                    }
+                }
+            }
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -516,7 +535,9 @@ private fun PlayerChip(
             player.name,
             style = MaterialTheme.typography.labelLarge,
             color = if (isActive) Color.White else Color.White.copy(0.7f),
-            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
         // Finished piece count
         if (player.finishedPieceCount > 0) {
@@ -549,6 +570,11 @@ private fun SideRailDice(
     size: androidx.compose.ui.unit.Dp
 ) {
     Column(
+        modifier = Modifier.semantics {
+            val turnState = if (isCurrent) "current turn" else "waiting"
+            val diceLabel = diceValue?.toString() ?: "not rolled"
+            contentDescription = "${player.name}, $turnState, dice $diceLabel"
+        },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -558,14 +584,80 @@ private fun SideRailDice(
                 isRollable = isRollable,
                 isCurrentTurn = isCurrent,
                 onRoll = onRoll,
-                size = size
+                size = size,
+                contentDescription = if (isRollable) {
+                    "Roll dice for ${player.name}"
+                } else {
+                    "Dice for ${player.name}"
+                }
             )
         }
+    }
+}
+
+@Composable
+private fun BoardSeatNamesOverlay(
+    playersByColor: Map<PlayerColor, com.failureludo.engine.Player>,
+    currentPlayerId: PlayerId,
+    playerColors: Map<PlayerColor, Color>,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        PlayerColor.entries.forEach { color ->
+            val player = playersByColor[color] ?: return@forEach
+            val isCurrent = player.id == currentPlayerId
+
+            val alignment = when (color) {
+                PlayerColor.RED -> Alignment.TopStart
+                PlayerColor.BLUE -> Alignment.TopEnd
+                PlayerColor.YELLOW -> Alignment.BottomEnd
+                PlayerColor.GREEN -> Alignment.BottomStart
+            }
+
+            SeatCornerNameBadge(
+                player = player,
+                isCurrent = isCurrent,
+                tint = playerColor(color, playerColors),
+                modifier = Modifier
+                    .align(alignment)
+                    .padding(8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SeatCornerNameBadge(
+    player: com.failureludo.engine.Player,
+    isCurrent: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    val badgeBackground = if (isCurrent) {
+        tint.copy(alpha = 0.86f)
+    } else {
+        tint.copy(alpha = 0.62f)
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(badgeBackground)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .semantics {
+                contentDescription = buildString {
+                    append(player.name)
+                    append(if (isCurrent) ", current turn" else ", waiting")
+                }
+            }
+    ) {
         Text(
-            text = player.color.displayName,
+            text = player.name,
             style = MaterialTheme.typography.labelSmall,
-            color = if (isCurrent) Primary else OnSurface.copy(alpha = 0.7f),
-            maxLines = 1
+            color = Color.White,
+            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

@@ -6,6 +6,7 @@ enum class PlayerType { HUMAN, BOT }
 /**
  * A player in the game.
  *
+ * @param id         Stable internal player identity (1..4)
  * @param color      Identifies this player on the board
  * @param name       Display name (e.g. "Player 1", "Alice")
  * @param type       Human or bot
@@ -13,6 +14,7 @@ enum class PlayerType { HUMAN, BOT }
  * @param isActive   False when the seat is empty (3-player game: one seat left empty)
  */
 data class Player(
+    val id: PlayerId,
     val color: PlayerColor,
     val name: String,
     val type: PlayerType = PlayerType.HUMAN,

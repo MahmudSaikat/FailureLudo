@@ -18,9 +18,16 @@ data class SetupState(
         PlayerColor.RED, PlayerColor.BLUE, PlayerColor.YELLOW, PlayerColor.GREEN
     ),
     val playerTypes: Map<PlayerColor, PlayerType> = PlayerColor.entries.associateWith { PlayerType.HUMAN },
-    val playerNames: Map<PlayerColor, String> = PlayerColor.entries.associateWith { it.displayName },
+    val playerNames: Map<PlayerColor, String> = defaultPlayerNames(),
     val playerColors: Map<PlayerColor, Color> = defaultPlayerColors(),
     val mode: GameMode = GameMode.FREE_FOR_ALL
+)
+
+fun defaultPlayerNames(): Map<PlayerColor, String> = mapOf(
+    PlayerColor.RED to "Player-1",
+    PlayerColor.BLUE to "Player-2",
+    PlayerColor.YELLOW to "Player-3",
+    PlayerColor.GREEN to "Player-4"
 )
 
 fun defaultPlayerColors(): Map<PlayerColor, Color> = mapOf(

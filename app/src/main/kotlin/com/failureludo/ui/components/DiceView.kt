@@ -11,10 +11,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -29,10 +34,13 @@ fun DiceView(
     isCurrentTurn: Boolean,
     onRoll: () -> Unit,
     size: Dp = 72.dp,
+    contentDescription: String = "Dice",
     modifier: Modifier = Modifier
 ) {
+    val isInactive = !isCurrentTurn
+
     val baseScale by animateFloatAsState(
-        targetValue  = if (isRollable) 1f else 0.95f,
+        targetValue  = if (isCurrentTurn) 1f else 0.92f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label        = "dice_scale"
     )
@@ -73,25 +81,25 @@ fun DiceView(
         }
     }
 
-    val pulseEnabled = isCurrentTurn && isRollable
+    val pulseEnabled = isCurrentTurn
     val pulseTransition = rememberInfiniteTransition(label = "dice_turn_pulse")
     val pulseScale by pulseTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (pulseEnabled) 1.1f else 1f,
+        targetValue = if (pulseEnabled) 1.09f else 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "dice_pulse_scale"
     )
-    val pulseAlpha by pulseTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = if (pulseEnabled) 0.65f else 0f,
+    val glowAlpha by pulseTransition.animateFloat(
+        initialValue = 0.14f,
+        targetValue = if (pulseEnabled) 0.36f else 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = LinearEasing),
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "dice_pulse_alpha"
+        label = "dice_glow_alpha"
     )
 
     Box(
@@ -101,12 +109,20 @@ fun DiceView(
         if (pulseEnabled) {
             Box(
                 modifier = Modifier
-                    .size(size + 8.dp)
+                    .size(size + 16.dp)
                     .scale(pulseScale)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Primary.copy(alpha = glowAlpha * 0.45f))
+            )
+
+            Box(
+                modifier = Modifier
+                    .size(size + 8.dp)
+                    .scale((pulseScale + 1f) / 2f)
                     .clip(RoundedCornerShape(18.dp))
                     .border(
-                        width = 2.dp,
-                        color = Primary.copy(alpha = pulseAlpha),
+                        width = 3.dp,
+                        color = Primary.copy(alpha = glowAlpha),
                         shape = RoundedCornerShape(18.dp)
                     )
             )
@@ -117,13 +133,20 @@ fun DiceView(
                 .size(size)
                 .scale(baseScale * rollScale.value)
                 .rotate(rollRotation.value)
+                .alpha(if (isInactive) 0.48f else 1f)
                 .clip(RoundedCornerShape(14.dp))
-                .background(if (isRollable) Color.White else Color.White.copy(alpha = 0.6f))
+                .background(if (isInactive) Color(0xFFD0D0D0) else Color.White)
                 .border(
-                    width  = if (isRollable) 3.dp else 2.dp,
-                    color  = if (isRollable) Color.Black else Color.Gray.copy(alpha = 0.4f),
+                    width  = if (isCurrentTurn) 3.dp else 2.dp,
+                    color  = if (isCurrentTurn) Primary.copy(alpha = 0.95f) else Color(0xFF7D7D7D),
                     shape  = RoundedCornerShape(14.dp)
                 )
+                .semantics {
+                    this.contentDescription = contentDescription
+                    if (isRollable) {
+                        role = Role.Button
+                    }
+                }
                 .then(if (isRollable) Modifier.clickable(onClick = onRoll) else Modifier),
             contentAlignment = Alignment.Center
         ) {
@@ -133,17 +156,21 @@ fun DiceView(
                 text       = "?",
                 fontSize   = (size.value * 0.5f).sp,
                 fontWeight = FontWeight.Bold,
-                color      = if (isRollable) Color.Black else Color.Gray
+                color      = if (isInactive) Color(0xFF6F6F6F) else Color.Black
             )
         } else {
-            DiceFace(value = diceValue, size = size)
+            DiceFace(
+                value = diceValue,
+                size = size,
+                dotColor = if (isInactive) Color(0xFF5F5F5F) else Color.Black
+            )
         }
         }
     }
 }
 
 @Composable
-private fun DiceFace(value: Int, size: Dp) {
+private fun DiceFace(value: Int, size: Dp, dotColor: Color) {
     val dotSize = (size.value * 0.14f).dp
 
     Box(
@@ -161,7 +188,7 @@ private fun DiceFace(value: Int, size: Dp) {
                         y = (size.value * yFrac * 0.76f - dotSize.value / 2).dp
                     )
                     .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(Color.Black)
+                    .background(dotColor)
             )
         }
     }

@@ -15,6 +15,7 @@ import com.failureludo.engine.Piece
 import com.failureludo.engine.PiecePosition
 import com.failureludo.engine.Player
 import com.failureludo.engine.PlayerColor
+import com.failureludo.engine.PlayerId
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
 import com.failureludo.viewmodel.SetupState
@@ -28,6 +29,10 @@ import java.io.IOException
 private val Context.gameSessionDataStore by preferencesDataStore(name = "game_session")
 
 class GameSessionStore(private val context: Context) {
+
+    companion object {
+        private const val SESSION_SCHEMA_VERSION = 3
+    }
 
     private object Keys {
         val GAME_STATE_JSON = stringPreferencesKey("game_state_json")
@@ -97,6 +102,7 @@ class GameSessionStore(private val context: Context) {
         }
 
         return JSONObject()
+            .put("schemaVersion", SESSION_SCHEMA_VERSION)
             .put("activeColors", JSONArray(state.activeColors.map { it.name }))
             .put("playerTypes", playerTypesObj)
             .put("playerNames", playerNamesObj)
@@ -105,6 +111,11 @@ class GameSessionStore(private val context: Context) {
     }
 
     private fun setupStateFromJson(json: JSONObject): SetupState {
+        val schemaVersion = json.optInt("schemaVersion", 0)
+        require(schemaVersion == SESSION_SCHEMA_VERSION) {
+            "Unsupported setup schema version: $schemaVersion"
+        }
+
         val activeColors = json.getJSONArray("activeColors").toStringList().map { PlayerColor.valueOf(it) }
 
         val playerTypesObj = json.getJSONObject("playerTypes")
@@ -116,7 +127,7 @@ class GameSessionStore(private val context: Context) {
         val playerNamesObj = json.getJSONObject("playerNames")
         val playerNames = PlayerColor.entries.associateWith { color ->
             if (playerNamesObj.has(color.name)) playerNamesObj.getString(color.name)
-            else color.displayName
+            else "Player-${color.ordinal + 1}"
         }
 
         val defaultColors = defaultPlayerColors()
@@ -142,6 +153,7 @@ class GameSessionStore(private val context: Context) {
 
     private fun gameStateToJson(state: GameState): JSONObject {
         return JSONObject()
+            .put("schemaVersion", SESSION_SCHEMA_VERSION)
             .put("players", JSONArray(state.players.map { playerToJson(it) }))
             .put("mode", state.mode.name)
             .put("moveCounter", state.moveCounter)
@@ -150,11 +162,16 @@ class GameSessionStore(private val context: Context) {
             .put("lastDice", state.lastDice?.let { diceToJson(it) } ?: JSONObject.NULL)
             .put("diceByPlayer", diceByPlayerToJson(state.diceByPlayer))
             .put("movablePieces", JSONArray(state.movablePieces.map { pieceToJson(it) }))
-            .put("winners", JSONArray((state.winners ?: emptyList()).map { it.name }))
+                .put("winners", JSONArray((state.winners ?: emptyList()).map { it.value }))
             .put("eventLog", JSONArray(state.eventLog.map { eventToJson(it) }))
     }
 
     private fun gameStateFromJson(json: JSONObject): GameState {
+        val schemaVersion = json.optInt("schemaVersion", 0)
+        require(schemaVersion == SESSION_SCHEMA_VERSION) {
+            "Unsupported game schema version: $schemaVersion"
+        }
+
         val players = json.getJSONArray("players").toObjectList { obj -> playerFromJson(obj) }
         val mode = GameMode.valueOf(json.getString("mode"))
         val moveCounter = if (json.has("moveCounter")) json.getLong("moveCounter") else 0L
@@ -166,8 +183,8 @@ class GameSessionStore(private val context: Context) {
 
         val diceByPlayer = diceByPlayerFromJson(json.getJSONObject("diceByPlayer"))
         val movablePieces = json.getJSONArray("movablePieces").toObjectList { obj -> pieceFromJson(obj) }
-        val winnersRaw = json.getJSONArray("winners").toStringList()
-        val winners = winnersRaw.map { PlayerColor.valueOf(it) }.takeIf { it.isNotEmpty() }
+        val winnersRaw = json.getJSONArray("winners").toIntList()
+        val winners = winnersRaw.map { PlayerId(it) }.takeIf { it.isNotEmpty() }
         val eventLog = json.getJSONArray("eventLog").toObjectList { obj -> eventFromJson(obj) }
 
         return GameState(
@@ -186,6 +203,7 @@ class GameSessionStore(private val context: Context) {
 
     private fun playerToJson(player: Player): JSONObject {
         return JSONObject()
+            .put("id", player.id.value)
             .put("color", player.color.name)
             .put("name", player.name)
             .put("type", player.type.name)
@@ -194,8 +212,16 @@ class GameSessionStore(private val context: Context) {
     }
 
     private fun playerFromJson(json: JSONObject): Player {
+        val color = PlayerColor.valueOf(json.getString("color"))
+        val id = if (json.has("id")) {
+            PlayerId(json.getInt("id"))
+        } else {
+            PlayerId(color.ordinal + 1)
+        }
+
         return Player(
-            color = PlayerColor.valueOf(json.getString("color")),
+            id = id,
+            color = color,
             name = json.getString("name"),
             type = PlayerType.valueOf(json.getString("type")),
             pieces = json.getJSONArray("pieces").toObjectList { pieceFromJson(it) },
@@ -252,19 +278,21 @@ class GameSessionStore(private val context: Context) {
         }
     }
 
-    private fun diceByPlayerToJson(diceByPlayer: Map<PlayerColor, Int?>): JSONObject {
+    private fun diceByPlayerToJson(diceByPlayer: Map<PlayerId, Int?>): JSONObject {
         val obj = JSONObject()
-        PlayerColor.entries.forEach { color ->
-            val value = diceByPlayer[color]
-            obj.put(color.name, value ?: JSONObject.NULL)
+        (1..4).forEach { idValue ->
+            val id = PlayerId(idValue)
+            val value = diceByPlayer[id]
+            obj.put(idValue.toString(), value ?: JSONObject.NULL)
         }
         return obj
     }
 
-    private fun diceByPlayerFromJson(json: JSONObject): Map<PlayerColor, Int?> {
-        return PlayerColor.entries.associateWith { color ->
-            if (!json.has(color.name) || json.isNull(color.name)) null
-            else json.getInt(color.name)
+    private fun diceByPlayerFromJson(json: JSONObject): Map<PlayerId, Int?> {
+        return (1..4).associate { idValue ->
+            val key = idValue.toString()
+            val value = if (!json.has(key) || json.isNull(key)) null else json.getInt(key)
+            PlayerId(idValue) to value
         }
     }
 
@@ -272,39 +300,47 @@ class GameSessionStore(private val context: Context) {
         return when (event) {
             is GameEvent.PieceMoved -> JSONObject()
                 .put("type", "PIECE_MOVED")
+                .put("playerId", event.playerId.value)
                 .put("color", event.color.name)
                 .put("pieceId", event.pieceId)
 
             is GameEvent.PieceEnteredBoard -> JSONObject()
                 .put("type", "PIECE_ENTERED")
+                .put("playerId", event.playerId.value)
                 .put("color", event.color.name)
                 .put("pieceId", event.pieceId)
 
             is GameEvent.PieceCaptured -> JSONObject()
                 .put("type", "PIECE_CAPTURED")
+                .put("capturedPlayerId", event.capturedPlayerId.value)
                 .put("capturedColor", event.capturedColor.name)
+                .put("byPlayerId", event.byPlayerId.value)
                 .put("byColor", event.byColor.name)
 
             is GameEvent.PieceFinished -> JSONObject()
                 .put("type", "PIECE_FINISHED")
+                .put("playerId", event.playerId.value)
                 .put("color", event.color.name)
                 .put("pieceId", event.pieceId)
 
             is GameEvent.PlayerWon -> JSONObject()
                 .put("type", "PLAYER_WON")
-                .put("colors", JSONArray(event.colors.map { it.name }))
+                .put("playerIds", JSONArray(event.playerIds.map { it.value }))
 
             is GameEvent.ExtraRollGranted -> JSONObject()
                 .put("type", "EXTRA_ROLL")
+                .put("playerId", event.playerId.value)
                 .put("color", event.color.name)
                 .put("reason", event.reason)
 
             is GameEvent.TurnSkipped -> JSONObject()
                 .put("type", "TURN_SKIPPED")
+                .put("playerId", event.playerId.value)
                 .put("color", event.color.name)
 
             is GameEvent.ConsecutiveSixesForfeit -> JSONObject()
                 .put("type", "THREE_SIX_FORFEIT")
+                .put("playerId", event.playerId.value)
                 .put("color", event.color.name)
         }
     }
@@ -312,44 +348,52 @@ class GameSessionStore(private val context: Context) {
     private fun eventFromJson(json: JSONObject): GameEvent {
         return when (json.getString("type")) {
             "PIECE_MOVED" -> GameEvent.PieceMoved(
+                playerId = PlayerId(json.getInt("playerId")),
                 color = PlayerColor.valueOf(json.getString("color")),
                 pieceId = json.getInt("pieceId")
             )
 
             "PIECE_ENTERED" -> GameEvent.PieceEnteredBoard(
+                playerId = PlayerId(json.getInt("playerId")),
                 color = PlayerColor.valueOf(json.getString("color")),
                 pieceId = json.getInt("pieceId")
             )
 
             "PIECE_CAPTURED" -> GameEvent.PieceCaptured(
+                capturedPlayerId = PlayerId(json.getInt("capturedPlayerId")),
                 capturedColor = PlayerColor.valueOf(json.getString("capturedColor")),
+                byPlayerId = PlayerId(json.getInt("byPlayerId")),
                 byColor = PlayerColor.valueOf(json.getString("byColor"))
             )
 
             "PIECE_FINISHED" -> GameEvent.PieceFinished(
+                playerId = PlayerId(json.getInt("playerId")),
                 color = PlayerColor.valueOf(json.getString("color")),
                 pieceId = json.getInt("pieceId")
             )
 
             "PLAYER_WON" -> {
-                val colors = json.getJSONArray("colors").toStringList().map { PlayerColor.valueOf(it) }
-                GameEvent.PlayerWon(colors)
+                val playerIds = json.getJSONArray("playerIds").toIntList().map { PlayerId(it) }
+                GameEvent.PlayerWon(playerIds)
             }
 
             "EXTRA_ROLL" -> GameEvent.ExtraRollGranted(
+                playerId = PlayerId(json.getInt("playerId")),
                 color = PlayerColor.valueOf(json.getString("color")),
                 reason = json.getString("reason")
             )
 
             "TURN_SKIPPED" -> GameEvent.TurnSkipped(
+                playerId = PlayerId(json.getInt("playerId")),
                 color = PlayerColor.valueOf(json.getString("color"))
             )
 
             "THREE_SIX_FORFEIT" -> GameEvent.ConsecutiveSixesForfeit(
+                playerId = PlayerId(json.getInt("playerId")),
                 color = PlayerColor.valueOf(json.getString("color"))
             )
 
-            else -> GameEvent.TurnSkipped(PlayerColor.RED)
+            else -> GameEvent.TurnSkipped(playerId = PlayerId(1), color = PlayerColor.RED)
         }
     }
 
@@ -365,6 +409,14 @@ class GameSessionStore(private val context: Context) {
         val result = mutableListOf<String>()
         for (i in 0 until length()) {
             result += getString(i)
+        }
+        return result
+    }
+
+    private fun JSONArray.toIntList(): List<Int> {
+        val result = mutableListOf<Int>()
+        for (i in 0 until length()) {
+            result += getInt(i)
         }
         return result
     }

@@ -456,20 +456,20 @@ object GameRules {
     /**
      * Determines the winner(s) in FREE_FOR_ALL or TEAM mode.
      * Returns null if the game is not yet over.
-     * Returns a list of winning [PlayerColor]s (2 in team mode).
+     * Returns a list of winning [PlayerId]s (2 in team mode).
      */
-    fun checkWinner(players: List<Player>, mode: GameMode): List<PlayerColor>? {
+    fun checkWinner(players: List<Player>, mode: GameMode): List<PlayerId>? {
         val activePlayers = players.filter { it.isActive }
         return when (mode) {
             GameMode.FREE_FOR_ALL -> {
                 val winner = activePlayers.firstOrNull { it.hasFinished }
-                winner?.let { listOf(it.color) }
+                winner?.let { listOf(it.id) }
             }
             GameMode.TEAM -> {
                 for (teamIndex in 0..1) {
                     val teamPlayers = activePlayers.filter { it.color.teamIndex == teamIndex }
                     if (teamPlayers.isNotEmpty() && teamPlayers.all { it.hasFinished }) {
-                        return teamPlayers.map { it.color }
+                        return teamPlayers.map { it.id }
                     }
                 }
                 null
