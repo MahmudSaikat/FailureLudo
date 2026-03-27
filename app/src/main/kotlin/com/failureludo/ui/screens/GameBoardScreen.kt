@@ -27,11 +27,11 @@ import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
+import com.failureludo.ui.components.BoardCoordinates
 import com.failureludo.ui.components.DiceView
 import com.failureludo.ui.components.LudoBoardCanvas
 import com.failureludo.ui.theme.*
 import com.failureludo.viewmodel.GameViewModel
-import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -73,8 +73,58 @@ fun GameBoardScreen(
     var captureFxColor by remember { mutableStateOf(Color.White) }
     var finishFxTrigger by remember { mutableIntStateOf(0) }
     var finishFxColor by remember { mutableStateOf(Color.White) }
-    var extraRollBadgeColor by remember { mutableStateOf<PlayerColor?>(null) }
-    var extraRollBadgeToken by remember { mutableIntStateOf(0) }
+    val animatedPieceCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
+    var previousPiecePositions by remember { mutableStateOf<Map<Pair<PlayerColor, Int>, PiecePosition>?>(null) }
+    var previousMoveCounter by remember { mutableLongStateOf(-1L) }
+
+    val precomputedAnimationPaths = remember(
+        gameState.players,
+        gameState.moveCounter,
+        previousPiecePositions,
+        previousMoveCounter
+    ) {
+        buildAnimationPaths(
+            state = gameState,
+            previousPositions = previousPiecePositions,
+            previousMoveCounter = previousMoveCounter
+        )
+    }
+
+    val firstFrameAnimationCells = remember(precomputedAnimationPaths) {
+        precomputedAnimationPaths.associate { (key, cells) -> key to cells.first() }
+    }
+
+    val renderedAnimatedCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>> =
+        if (animatedPieceCells.isNotEmpty()) animatedPieceCells else firstFrameAnimationCells
+
+    LaunchedEffect(gameState.players, gameState.moveCounter) {
+        val currentPositions = extractPiecePositions(gameState)
+        val previousPositions = previousPiecePositions
+        val isForwardMove = previousMoveCounter >= 0L && gameState.moveCounter > previousMoveCounter
+
+        if (previousPositions != null && isForwardMove) {
+            if (precomputedAnimationPaths.isNotEmpty()) {
+                animatedPieceCells.clear()
+                val maxSteps = precomputedAnimationPaths.maxOf { (_, cells) -> cells.size }
+                for (stepIndex in 0 until maxSteps) {
+                    precomputedAnimationPaths.forEach { (key, cells) ->
+                        val cell = cells.getOrNull(stepIndex) ?: cells.last()
+                        animatedPieceCells[key] = cell
+                    }
+                    if (stepIndex < maxSteps - 1) {
+                        kotlinx.coroutines.delay(85L)
+                    }
+                }
+                kotlinx.coroutines.delay(70L)
+                animatedPieceCells.clear()
+            }
+        } else if (previousMoveCounter >= 0L && gameState.moveCounter != previousMoveCounter) {
+            animatedPieceCells.clear()
+        }
+
+        previousPiecePositions = currentPositions
+        previousMoveCounter = gameState.moveCounter
+    }
 
     LaunchedEffect(gameState, feedbackSettings) {
         val diceSignature = gameState.lastDice?.let {
@@ -108,15 +158,6 @@ fun GameBoardScreen(
 
                     is GameEvent.ExtraRollGranted -> {
                         feedbackManager.emitSound(FeedbackEvent.EXTRA_ROLL, feedbackSettings)
-                        extraRollBadgeColor = event.color
-                        val token = extraRollBadgeToken + 1
-                        extraRollBadgeToken = token
-                        launch {
-                            kotlinx.coroutines.delay(1200)
-                            if (extraRollBadgeToken == token) {
-                                extraRollBadgeColor = null
-                            }
-                        }
                     }
 
                     is GameEvent.TurnSkipped,
@@ -253,7 +294,6 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -266,7 +306,6 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -280,8 +319,13 @@ fun GameBoardScreen(
                         LudoBoardCanvas(
                             allPieces        = piecesMap,
                             movablePieceIds  = movableSet,
+                            animatedPieceCells = renderedAnimatedCells,
                             playerPalette    = setup.playerColors,
-                            onPieceTapped    = { piece -> viewModel.selectPiece(piece) },
+                            onPieceTapped    = { piece ->
+                                if (renderedAnimatedCells.isEmpty()) {
+                                    viewModel.selectPiece(piece)
+                                }
+                            },
                             modifier         = Modifier.matchParentSize()
                         )
 
@@ -313,7 +357,6 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -326,7 +369,6 @@ fun GameBoardScreen(
                                 isRollable = player.color == gameState.currentPlayer.color &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                showExtraRollBadge = extraRollBadgeColor == player.color,
                                 onRoll = { viewModel.rollDice() },
                                 size = diceSize
                             )
@@ -337,6 +379,104 @@ fun GameBoardScreen(
 
         }
     }
+}
+
+private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>, PiecePosition> {
+    return state.players
+        .flatMap { player ->
+            player.pieces.map { piece -> (player.color to piece.id) to piece.position }
+        }
+        .toMap()
+}
+
+private fun buildAnimationPaths(
+    state: GameState,
+    previousPositions: Map<Pair<PlayerColor, Int>, PiecePosition>?,
+    previousMoveCounter: Long
+): List<Pair<Pair<PlayerColor, Int>, List<Pair<Int, Int>>>> {
+    if (previousPositions == null) return emptyList()
+    if (previousMoveCounter < 0L || state.moveCounter <= previousMoveCounter) return emptyList()
+
+    val movedPieces = state.players
+        .flatMap { player ->
+            player.pieces
+                .filter { it.lastMovedAt == state.moveCounter }
+                .map { piece -> player.color to piece }
+        }
+
+    return movedPieces.mapNotNull { (color, piece) ->
+        val key = color to piece.id
+        val startPosition = previousPositions[key] ?: return@mapNotNull null
+        val pathCells = computePieceAnimationCells(
+            color = color,
+            pieceId = piece.id,
+            start = startPosition,
+            end = piece.position
+        )
+        if (pathCells.size <= 1) return@mapNotNull null
+        key to pathCells
+    }
+}
+
+private fun computePieceAnimationCells(
+    color: PlayerColor,
+    pieceId: Int,
+    start: PiecePosition,
+    end: PiecePosition
+): List<Pair<Int, Int>> {
+    if (start == end) {
+        return pieceCell(color, pieceId, end)?.let { listOf(it) } ?: emptyList()
+    }
+
+    val steps = mutableListOf<PiecePosition>()
+    var cursor = start
+    steps += cursor
+
+    var guard = Board.MAIN_TRACK_SIZE + Board.HOME_COLUMN_STEPS + 8
+    while (cursor != end && guard > 0) {
+        cursor = nextAnimationStep(color, cursor, end)
+        steps += cursor
+        guard -= 1
+    }
+
+    if (cursor != end) {
+        return pieceCell(color, pieceId, end)?.let { listOf(it) } ?: emptyList()
+    }
+
+    return steps.mapNotNull { position -> pieceCell(color, pieceId, position) }
+}
+
+private fun nextAnimationStep(
+    color: PlayerColor,
+    current: PiecePosition,
+    target: PiecePosition
+): PiecePosition {
+    return when (current) {
+        PiecePosition.HomeBase -> PiecePosition.MainTrack(Board.ENTRY_POSITIONS.getValue(color))
+        is PiecePosition.MainTrack -> {
+            val homeEntry = Board.HOME_COLUMN_ENTRY.getValue(color)
+            if (current.index == homeEntry && target !is PiecePosition.MainTrack) {
+                PiecePosition.HomeColumn(1)
+            } else {
+                PiecePosition.MainTrack((current.index + 1) % Board.MAIN_TRACK_SIZE)
+            }
+        }
+        is PiecePosition.HomeColumn -> {
+            if (current.step >= Board.HOME_COLUMN_STEPS) PiecePosition.Finished
+            else PiecePosition.HomeColumn(current.step + 1)
+        }
+        PiecePosition.Finished -> PiecePosition.Finished
+    }
+}
+
+private fun pieceCell(color: PlayerColor, pieceId: Int, position: PiecePosition): Pair<Int, Int>? {
+    return BoardCoordinates.cellFor(
+        Piece(
+            id = pieceId,
+            color = color,
+            position = position
+        )
+    )
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -405,7 +545,6 @@ private fun SideRailDice(
     diceValue: Int?,
     isCurrent: Boolean,
     isRollable: Boolean,
-    showExtraRollBadge: Boolean,
     onRoll: () -> Unit,
     size: androidx.compose.ui.unit.Dp
 ) {
@@ -421,34 +560,12 @@ private fun SideRailDice(
                 onRoll = onRoll,
                 size = size
             )
-
-            if (showExtraRollBadge) {
-                ExtraRollBadge()
-            }
         }
         Text(
             text = player.color.displayName,
             style = MaterialTheme.typography.labelSmall,
             color = if (isCurrent) Primary else OnSurface.copy(alpha = 0.7f),
             maxLines = 1
-        )
-    }
-}
-
-@Composable
-private fun ExtraRollBadge() {
-    Surface(
-        modifier = Modifier.offset(y = (-6).dp),
-        shape = RoundedCornerShape(10.dp),
-        color = Secondary,
-        tonalElevation = 2.dp
-    ) {
-        Text(
-            text = "EXTRA",
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = OnPrimary,
-            fontWeight = FontWeight.Bold
         )
     }
 }

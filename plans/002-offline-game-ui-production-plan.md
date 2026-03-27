@@ -57,6 +57,11 @@ Implication: for an offline production app, we should ship polished visual/audio
   - Master volume slider.
 
 ### P1 — Production Polish (High value)
+- [x] **Move History Controls (Offline)**
+  - Add undo/redo controls for recent actions.
+  - Keep bounded local history to avoid memory growth.
+  - Ensure delayed bot/no-move automation is canceled safely on timeline changes.
+
 - [x] **Dice Interaction Upgrade**
   - Roll animation with brief anticipation + settle state.
   - Disable/re-enable states with explicit visual affordance.
@@ -67,8 +72,8 @@ Implication: for an offline production app, we should ship polished visual/audio
   - Finish/home arrival confetti-lite effect.
   - Extra-roll visual badge near current player.
 
-- [ ] **Turn Guidance System**
-  - Entry arrow and legal destination hint for each movable pawn.
+- [x] **Turn Guidance System**
+  - No legal destination indicator (manual calculation by design for gameplay feel).
   - If only one legal move exists, allow optional one-tap quick move.
   - Contextual microcopy for no-move skip and triple-six forfeit.
 
@@ -163,8 +168,10 @@ Implication: for an offline production app, we should ship polished visual/audio
 ## Status
 - Plan status: **Milestone B In Progress**
 - Milestone A status: **Completed (2026-03-26)**
-- Milestone B status: **Started (2026-03-26)**
-- Milestone B progress: **2/3 complete (Dice + Pawn + Event FX done; Turn Guidance pending)**
+- Milestone B status: **Completed (2026-03-27)**
+- Milestone B progress: **3/3 complete (Dice + Pawn + Event FX + Turn Guidance done)**
+- Move history controls: **Completed (undo/redo for recent actions)**
+- Pawn cell-by-cell walking animation: **In Progress (UI-layer implementation started, validation pending)**
 - Pending in P0: **None**
-- Priority: **High (Interaction polish)**
-- Last updated: 2026-03-26
+- Priority: **High (Accessibility pass)**
+- Last updated: 2026-03-27

@@ -27,6 +27,7 @@ private const val GRID = 15
 fun LudoBoardCanvas(
     allPieces: Map<PlayerColor, List<Piece>>,
     movablePieceIds: Set<Pair<PlayerColor, Int>>,  // (color, pieceId) pairs that can move
+    animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>> = emptyMap(),
     playerPalette: Map<PlayerColor, Color> = emptyMap(),
     onPieceTapped: (Piece) -> Unit,
     modifier: Modifier = Modifier
@@ -34,7 +35,7 @@ fun LudoBoardCanvas(
     val textMeasurer = rememberTextMeasurer()
 
     Canvas(
-        modifier = modifier.pointerInput(allPieces, movablePieceIds) {
+        modifier = modifier.pointerInput(allPieces, movablePieceIds, animatedPieceCells) {
             detectTapGestures { tapOffset ->
                 val cellSize = size.width / GRID.toFloat()
                 val col = (tapOffset.x / cellSize).toInt().coerceIn(0, GRID - 1)
@@ -43,7 +44,7 @@ fun LudoBoardCanvas(
                 // Find if any movable piece lives in this cell
                 for ((color, pieces) in allPieces) {
                     for (piece in pieces) {
-                        val cell = BoardCoordinates.cellFor(piece) ?: continue
+                        val cell = animatedPieceCells[color to piece.id] ?: BoardCoordinates.cellFor(piece) ?: continue
                         if (cell.first == row && cell.second == col &&
                             (color to piece.id) in movablePieceIds
                         ) {
@@ -61,7 +62,7 @@ fun LudoBoardCanvas(
         drawHomeYards(cellSize, playerPalette)
         drawHomeColumns(cellSize, playerPalette)
         drawCenter(cellSize, playerPalette)
-        drawAllPieces(allPieces, movablePieceIds, cellSize, textMeasurer, playerPalette)
+        drawAllPieces(allPieces, movablePieceIds, animatedPieceCells, cellSize, textMeasurer, playerPalette)
     }
 }
 
@@ -259,6 +260,7 @@ private fun DrawScope.drawArrowOnCell(
 private fun DrawScope.drawAllPieces(
     allPieces: Map<PlayerColor, List<Piece>>,
     movable: Set<Pair<PlayerColor, Int>>,
+    animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,
     cellSize: Float,
     textMeasurer: TextMeasurer,
     playerPalette: Map<PlayerColor, Color>
@@ -267,7 +269,7 @@ private fun DrawScope.drawAllPieces(
     val cellMap = mutableMapOf<Pair<Int, Int>, MutableList<Piece>>()
     for ((_, pieces) in allPieces) {
         for (piece in pieces) {
-            val cell = BoardCoordinates.cellFor(piece) ?: continue
+            val cell = animatedPieceCells[piece.color to piece.id] ?: BoardCoordinates.cellFor(piece) ?: continue
             cellMap.getOrPut(cell) { mutableListOf() }.add(piece)
         }
     }
