@@ -10,6 +10,7 @@ import com.failureludo.engine.GameEngine
 import com.failureludo.engine.GameRules
 import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
+import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
 import kotlinx.coroutines.delay
@@ -42,12 +43,22 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            sessionStore.loadSetupState()?.let { restoredSetup ->
+            val restoredSetup = sessionStore.loadSetupState()
+            val restoredGame = sessionStore.loadGameState()
+
+            restoredSetup?.let {
                 _setupState.value = restoredSetup
             }
-            sessionStore.loadGameState()?.let { restoredGame ->
-                _gameState.value = restoredGame
+
+            val validRestoredGame = restoredGame?.takeIf { it.isRestorable() }
+            if (validRestoredGame != null) {
+                _gameState.value = validRestoredGame
+                checkForBotTurn()
+            } else if (restoredGame != null) {
+                // Drop corrupt/incomplete snapshots so Resume is hidden instead of crashing.
+                sessionStore.saveGameState(null)
             }
+
             _isSessionRestored.value = true
         }
 
@@ -175,11 +186,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
 
+        val diceValue = state.lastDice?.value ?: run {
+            // Recover gracefully if persisted phase and dice are out of sync.
+            setGameState(
+                state.copy(
+                    turnPhase = TurnPhase.WAITING_FOR_ROLL,
+                    movablePieces = emptyList()
+                ),
+                recordHistory = false,
+                clearRedo = false
+            )
+            return
+        }
+
         val isHumanTurn = state.currentPlayer.type == PlayerType.HUMAN
         val shouldPromptForHomeEntryChoice = isHumanTurn &&
             GameRules.wouldEnterHomePath(
                 piece,
-                state.lastDice!!.value,
+                diceValue,
                 state.currentPlayer.color,
                 state.players,
                 state.mode
@@ -347,5 +371,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun updateHistoryFlags() {
         _canUndo.value = undoStack.isNotEmpty()
         _canRedo.value = redoStack.isNotEmpty()
+    }
+
+    private fun GameState.isRestorable(): Boolean {
+        if (players.isEmpty()) return false
+        if (currentPlayerIndex !in players.indices) return false
+        if (players.map { it.color }.toSet().size != PlayerColor.entries.size) return false
+
+        val ids = players.map { it.id }
+        if (ids.distinct().size != players.size) return false
+
+        if (turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION && lastDice == null) return false
+
+        if (mode == com.failureludo.engine.GameMode.TEAM) {
+            val activeCount = players.count { it.isActive }
+            if (activeCount != 4) return false
+        }
+
+        return true
     }
 }
