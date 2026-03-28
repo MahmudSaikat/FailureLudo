@@ -33,6 +33,8 @@ Common expectations seen in leading apps:
       Surface clear action history (moved/captured/extra roll/skip) instead of only last event.
 - [ ] **Move Preview + Destination Highlight**  
       On tap/selectable piece, show destination cell and capture risk/safe-square hint.
+- [x] **Stacked-Cell Move Disambiguation (pair vs single)**
+      For ambiguous stacked taps (notably 3-piece same-color stacks), show explicit move choice so players can intentionally move the top single or locked pair.
 - [ ] **Per-turn Explainers**  
       Add explicit reason labels for auto-skip, extra roll, and three-sixes forfeit.
 - [ ] **Session Save/Restore**  
@@ -83,7 +85,7 @@ Common expectations seen in leading apps:
 - Increased replay rate (play again / rematch usage).
 
 ## Status Tracker
-- Plan status: **Drafted**
-- Next action: Implement Milestone 1 (P0 trust & clarity)
+- Plan status: **In Progress**
+- Next action: Implement remaining Milestone 1 trust/clarity items (timeline, move preview, explainers)
 - Owner: TBD
-- Last updated: 2026-03-26
+- Last updated: 2026-03-28

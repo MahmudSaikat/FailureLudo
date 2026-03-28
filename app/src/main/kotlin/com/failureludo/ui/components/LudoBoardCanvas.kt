@@ -23,13 +23,18 @@ import com.failureludo.ui.theme.*
 
 private const val GRID = 15
 
+data class TappedCellPieces(
+    val allPieces: List<Piece>,
+    val movablePieces: List<Piece>
+)
+
 @Composable
 fun LudoBoardCanvas(
     allPieces: Map<PlayerColor, List<Piece>>,
     movablePieceIds: Set<Pair<PlayerColor, Int>>,  // (color, pieceId) pairs that can move
     animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>> = emptyMap(),
     playerPalette: Map<PlayerColor, Color> = emptyMap(),
-    onPieceTapped: (Piece) -> Unit,
+    onCellPiecesTapped: (TappedCellPieces) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -41,17 +46,27 @@ fun LudoBoardCanvas(
                 val col = (tapOffset.x / cellSize).toInt().coerceIn(0, GRID - 1)
                 val row = (tapOffset.y / cellSize).toInt().coerceIn(0, GRID - 1)
 
-                // Find if any movable piece lives in this cell
+                // Collect full stack context from tapped cell so caller can apply rule-specific selection UX.
+                val tappedAllPieces = mutableListOf<Piece>()
+                val tappedMovablePieces = mutableListOf<Piece>()
                 for ((color, pieces) in allPieces) {
                     for (piece in pieces) {
                         val cell = animatedPieceCells[color to piece.id] ?: BoardCoordinates.cellFor(piece) ?: continue
-                        if (cell.first == row && cell.second == col &&
-                            (color to piece.id) in movablePieceIds
-                        ) {
-                            onPieceTapped(piece)
-                            return@detectTapGestures
+                        if (cell.first == row && cell.second == col) {
+                            tappedAllPieces += piece
+                            if ((color to piece.id) in movablePieceIds) {
+                                tappedMovablePieces += piece
+                            }
                         }
                     }
+                }
+
+                if (tappedMovablePieces.isNotEmpty()) {
+                    onCellPiecesTapped(TappedCellPieces(
+                        allPieces = tappedAllPieces.sortedWith(compareBy<Piece>({ it.color.ordinal }, { it.id })),
+                        movablePieces = tappedMovablePieces.sortedWith(compareBy<Piece>({ it.color.ordinal }, { it.id }))
+                    )
+                    )
                 }
             }
         }

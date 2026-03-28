@@ -1,6 +1,6 @@
 # FailureLudo Live Rules (Current Implementation)
 
-Last updated: 2026-03-27
+Last updated: 2026-03-28
 
 This document describes the rules as currently implemented in the game engine.
 Code remains the source of truth, but this file is the human-readable baseline for future rule changes.
@@ -70,6 +70,10 @@ Code remains the source of truth, but this file is the human-readable baseline f
   - Only even dice can move a locked double.
   - Effective movement distance for the locked double is half the die value.
   - Odd dice means that locked pair has no legal move for that roll.
+- Triple stack behavior on non-safe, non-entry cells:
+  - The top single remains independently movable.
+  - The locked pair remains constrained to tied-double rules.
+  - When a tap lands on a stack where both options are legal, the UI asks the player to choose **Move single** or **Move pair**.
 - Unlock behavior:
   - Lock is released on safe squares and on the color's home-column entry cell.
 - Team-mode mixed doubles:

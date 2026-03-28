@@ -33,6 +33,7 @@ import com.failureludo.feedback.GameFeedbackManager
 import com.failureludo.ui.components.BoardCoordinates
 import com.failureludo.ui.components.DiceView
 import com.failureludo.ui.components.LudoBoardCanvas
+import com.failureludo.ui.components.TappedCellPieces
 import com.failureludo.ui.theme.*
 import com.failureludo.viewmodel.GameViewModel
 import kotlin.math.PI
@@ -69,6 +70,7 @@ fun GameBoardScreen(
 
     var showQuitDialog by remember { mutableStateOf(false) }
     var showFeedbackDialog by remember { mutableStateOf(false) }
+    var pendingStackChoice by remember { mutableStateOf<StackMoveChoiceState?>(null) }
 
     var previousDiceSignature by remember { mutableStateOf<String?>(null) }
     var previousEventSize by remember { mutableIntStateOf(0) }
@@ -185,6 +187,12 @@ fun GameBoardScreen(
         previousEventSize = gameState.eventLog.size
     }
 
+    LaunchedEffect(gameState.turnPhase, gameState.currentPlayer.id, gameState.moveCounter) {
+        if (gameState.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) {
+            pendingStackChoice = null
+        }
+    }
+
     if (showQuitDialog) {
         AlertDialog(
             onDismissRequest = { showQuitDialog = false },
@@ -225,6 +233,59 @@ fun GameBoardScreen(
         )
     }
 
+    pendingStackChoice?.let { choiceState ->
+        AlertDialog(
+            onDismissRequest = { pendingStackChoice = null },
+            title = { Text("Choose Pawn Move") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select which move to play from this stack.")
+                    choiceState.options.forEach { option ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = option.tint.copy(alpha = 0.15f),
+                            tonalElevation = 1.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clip(CircleShape)
+                                            .background(option.tint)
+                                    )
+                                    Text(option.label, style = MaterialTheme.typography.bodyLarge)
+                                }
+                                TextButton(
+                                    onClick = {
+                                        pendingStackChoice = null
+                                        viewModel.selectPiece(option.piece)
+                                    }
+                                ) { Text("Play") }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { pendingStackChoice = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -253,13 +314,10 @@ fun GameBoardScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
 
-            // Player turn indicator row
             TurnIndicatorRow(gameState, setup.playerColors)
 
-            // Board - takes as much space as possible (square)
             val movableSet = gameState.movablePieces
                 .map { it.color to it.id }.toSet()
-
             val piecesMap = gameState.players.associate { p -> p.color to p.pieces }
 
             BoxWithConstraints(
@@ -320,16 +378,20 @@ fun GameBoardScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         LudoBoardCanvas(
-                            allPieces        = piecesMap,
-                            movablePieceIds  = movableSet,
+                            allPieces = piecesMap,
+                            movablePieceIds = movableSet,
                             animatedPieceCells = renderedAnimatedCells,
-                            playerPalette    = setup.playerColors,
-                            onPieceTapped    = { piece ->
+                            playerPalette = setup.playerColors,
+                            onCellPiecesTapped = { tapped ->
                                 if (renderedAnimatedCells.isEmpty()) {
-                                    viewModel.selectPiece(piece)
+                                    val decision = resolveStackTapDecision(tapped)
+                                    when {
+                                        decision.autoPiece != null -> viewModel.selectPiece(decision.autoPiece)
+                                        decision.options.isNotEmpty() -> pendingStackChoice = StackMoveChoiceState(decision.options)
+                                    }
                                 }
                             },
-                            modifier         = Modifier.matchParentSize()
+                            modifier = Modifier.matchParentSize()
                         )
 
                         CaptureBurstOverlay(
@@ -386,9 +448,81 @@ fun GameBoardScreen(
                     }
                 }
             }
-
         }
     }
+}
+
+private data class StackMoveOption(
+    val label: String,
+    val piece: Piece,
+    val tint: Color
+)
+
+private data class StackMoveChoiceState(
+    val options: List<StackMoveOption>
+)
+
+private data class StackTapDecision(
+    val autoPiece: Piece? = null,
+    val options: List<StackMoveOption> = emptyList()
+)
+
+private fun resolveStackTapDecision(tapped: TappedCellPieces): StackTapDecision {
+    val allPieces = tapped.allPieces
+        .distinctBy { it.color to it.id }
+        .sortedWith(compareBy<Piece>({ it.lastMovedAt }, { it.id }))
+    val movablePieces = tapped.movablePieces
+        .distinctBy { it.color to it.id }
+        .sortedWith(compareBy<Piece>({ it.lastMovedAt }, { it.id }))
+
+    if (movablePieces.isEmpty()) return StackTapDecision()
+    if (movablePieces.size == 1) return StackTapDecision(autoPiece = movablePieces.first())
+
+    val mainIndex = (allPieces.firstOrNull()?.position as? PiecePosition.MainTrack)?.index
+        ?: return StackTapDecision(autoPiece = movablePieces.last())
+    val sameMainCell = allPieces.all { (it.position as? PiecePosition.MainTrack)?.index == mainIndex }
+    if (!sameMainCell) return StackTapDecision(autoPiece = movablePieces.last())
+
+    // Safe squares should never open chooser for multi-stack taps.
+    if (Board.isSafeSquare(mainIndex)) {
+        return StackTapDecision(autoPiece = movablePieces.last())
+    }
+
+    val sameColor = allPieces.all { it.color == allPieces.first().color }
+    if (!sameColor) {
+        return StackTapDecision(autoPiece = movablePieces.last())
+    }
+
+    val color = allPieces.first().color
+    val isLockedCell = mainIndex != Board.HOME_COLUMN_ENTRY.getValue(color)
+    if (!isLockedCell) {
+        return StackTapDecision(autoPiece = movablePieces.last())
+    }
+
+    // 3-piece non-safe stack: explicit choice between top single and locked pair when both are legal.
+    if (allPieces.size == 3) {
+        val topSingle = allPieces.maxWithOrNull(compareBy<Piece>({ it.lastMovedAt }, { it.id })) ?: return StackTapDecision(autoPiece = movablePieces.last())
+        val pairPieces = allPieces.filter { it != topSingle }
+        val topSingleLegal = movablePieces.any { it.id == topSingle.id && it.color == topSingle.color }
+        val pairRepresentative = pairPieces.firstOrNull { candidate ->
+            movablePieces.any { it.id == candidate.id && it.color == candidate.color }
+        }
+
+        if (topSingleLegal && pairRepresentative != null) {
+            return StackTapDecision(
+                options = listOf(
+                    StackMoveOption(label = "Move single", piece = topSingle, tint = playerColor(topSingle.color)),
+                    StackMoveOption(label = "Move pair", piece = pairRepresentative, tint = playerColor(pairRepresentative.color))
+                )
+            )
+        }
+
+        if (topSingleLegal) return StackTapDecision(autoPiece = topSingle)
+        if (pairRepresentative != null) return StackTapDecision(autoPiece = pairRepresentative)
+    }
+
+    // 4-piece same-color stack rule is intentionally deferred. Keep deterministic auto-choice for now.
+    return StackTapDecision(autoPiece = movablePieces.last())
 }
 
 private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>, PiecePosition> {
