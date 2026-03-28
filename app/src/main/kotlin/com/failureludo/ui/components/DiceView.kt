@@ -38,6 +38,7 @@ fun DiceView(
     modifier: Modifier = Modifier
 ) {
     val isInactive = !isCurrentTurn
+    val scope = rememberCoroutineScope()
 
     val baseScale by animateFloatAsState(
         targetValue  = if (isCurrentTurn) 1f else 0.92f,
@@ -147,7 +148,42 @@ fun DiceView(
                         role = Role.Button
                     }
                 }
-                .then(if (isRollable) Modifier.clickable(onClick = onRoll) else Modifier),
+                .then(
+                    if (isRollable) {
+                        Modifier.clickable {
+                            // Immediate visual confirmation that the tap was registered.
+                            scope.launch {
+                                rollScale.snapTo(0.86f)
+                                rollRotation.snapTo(-14f)
+
+                                rollScale.animateTo(
+                                    targetValue = 1.14f,
+                                    animationSpec = tween(durationMillis = 95)
+                                )
+                                rollRotation.animateTo(
+                                    targetValue = 16f,
+                                    animationSpec = tween(durationMillis = 95)
+                                )
+
+                                rollScale.animateTo(
+                                    targetValue = 1f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMedium
+                                    )
+                                )
+                                rollRotation.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessLow
+                                    )
+                                )
+                            }
+                            onRoll()
+                        }
+                    } else Modifier
+                ),
             contentAlignment = Alignment.Center
         ) {
         if (diceValue == null) {

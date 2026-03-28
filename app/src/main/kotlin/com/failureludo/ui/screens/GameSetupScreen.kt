@@ -77,7 +77,14 @@ fun GameSetupScreen(
         ) {
             GameModeSection(
                 selected = setup.mode,
-                onSelect = { viewModel.updateSetup(setup.copy(mode = it)) }
+                onSelect = { selectedMode ->
+                    val nextSetup = if (selectedMode == GameMode.TEAM) {
+                        setup.copy(mode = selectedMode, activeColors = PlayerColor.entries)
+                    } else {
+                        setup.copy(mode = selectedMode)
+                    }
+                    viewModel.updateSetup(nextSetup)
+                }
             )
 
             if (setup.mode == GameMode.FREE_FOR_ALL) {

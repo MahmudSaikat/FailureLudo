@@ -50,10 +50,10 @@ object BoardCoordinates {
 
     /** The 4 yard spots for each colour's home-base pieces (where un-entered pieces sit). */
     val HOME_YARD_SPOTS: Map<PlayerColor, List<Pair<Int, Int>>> = mapOf(
-        PlayerColor.RED    to listOf(1 to 1, 1 to 3, 3 to 1, 3 to 3),
-        PlayerColor.BLUE   to listOf(1 to 10, 1 to 12, 3 to 10, 3 to 12),
-        PlayerColor.YELLOW to listOf(10 to 10, 10 to 12, 12 to 10, 12 to 12),
-        PlayerColor.GREEN  to listOf(10 to 1, 10 to 3, 12 to 1, 12 to 3)
+        PlayerColor.RED    to listOf(1 to 1, 1 to 4, 4 to 1, 4 to 4),
+        PlayerColor.BLUE   to listOf(1 to 10, 1 to 13, 4 to 10, 4 to 13),
+        PlayerColor.YELLOW to listOf(10 to 10, 10 to 13, 13 to 10, 13 to 13),
+        PlayerColor.GREEN  to listOf(10 to 1, 10 to 4, 13 to 1, 13 to 4)
     )
 
     val CENTER: Pair<Int, Int> = 7 to 7

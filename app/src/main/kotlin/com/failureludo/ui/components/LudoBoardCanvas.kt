@@ -85,7 +85,7 @@ fun LudoBoardCanvas(
 
 private fun DrawScope.drawBoard(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
     // Background
-    drawRect(color = BoardWhite)
+    drawRect(color = BoardWhite.copy(alpha = 0.74f))
 
     // Draw all 225 cells
     for (row in 0 until GRID) {

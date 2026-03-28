@@ -117,8 +117,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         clearHistory()
         _pendingHomeEntryChoicePiece.value = null
         val setup = _setupState.value
+        val activeColors = if (setup.mode == com.failureludo.engine.GameMode.TEAM) {
+            PlayerColor.entries
+        } else {
+            setup.activeColors
+        }
+
         val newState = GameEngine.newGame(
-            activeColors = setup.activeColors,
+            activeColors = activeColors,
             playerTypes  = setup.playerTypes,
             playerNames  = setup.playerNames,
             mode         = setup.mode

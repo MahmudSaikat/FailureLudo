@@ -86,6 +86,23 @@ class StackedMoveSelectionTest {
         assertEquals(PiecePosition.MainTrack(9), redAfterSingleMove.pieces.first { it.id == 2 }.position)
     }
 
+    @Test
+    fun `enemy double on safe square does not block passing`() {
+        val players = buildPlayersWithEnemySafeSquareDoubleBarrierScenario()
+        val blue = players.first { it.color == PlayerColor.BLUE }
+        val bluePiece = blue.pieces.first { it.id == 0 }
+
+        assertTrue(
+            GameRules.canMove(
+                piece = bluePiece,
+                diceValue = 3,
+                player = blue,
+                allPlayers = players,
+                mode = GameMode.FREE_FOR_ALL
+            )
+        )
+    }
+
     private fun buildPlayersWithRedTripleStack(mainIndex: Int): List<Player> {
         val redPieces = listOf(
             Piece(id = 0, color = PlayerColor.RED, position = PiecePosition.MainTrack(mainIndex), lastMovedAt = 10),
@@ -107,6 +124,53 @@ class StackedMoveSelectionTest {
                 color = PlayerColor.BLUE,
                 name = "Blue",
                 pieces = List(4) { id -> Piece(id = id, color = PlayerColor.BLUE) },
+                isActive = true
+            ),
+            Player(
+                id = PlayerId(3),
+                color = PlayerColor.YELLOW,
+                name = "Yellow",
+                pieces = List(4) { id -> Piece(id = id, color = PlayerColor.YELLOW) },
+                isActive = false
+            ),
+            Player(
+                id = PlayerId(4),
+                color = PlayerColor.GREEN,
+                name = "Green",
+                pieces = List(4) { id -> Piece(id = id, color = PlayerColor.GREEN) },
+                isActive = false
+            )
+        )
+    }
+
+    private fun buildPlayersWithEnemySafeSquareDoubleBarrierScenario(): List<Player> {
+        val redPieces = listOf(
+            Piece(id = 0, color = PlayerColor.RED, position = PiecePosition.MainTrack(13), lastMovedAt = 10),
+            Piece(id = 1, color = PlayerColor.RED, position = PiecePosition.MainTrack(13), lastMovedAt = 20),
+            Piece(id = 2, color = PlayerColor.RED, position = PiecePosition.HomeBase),
+            Piece(id = 3, color = PlayerColor.RED, position = PiecePosition.HomeBase)
+        )
+
+        val bluePieces = listOf(
+            Piece(id = 0, color = PlayerColor.BLUE, position = PiecePosition.MainTrack(12), lastMovedAt = 30),
+            Piece(id = 1, color = PlayerColor.BLUE, position = PiecePosition.HomeBase),
+            Piece(id = 2, color = PlayerColor.BLUE, position = PiecePosition.HomeBase),
+            Piece(id = 3, color = PlayerColor.BLUE, position = PiecePosition.HomeBase)
+        )
+
+        return listOf(
+            Player(
+                id = PlayerId(1),
+                color = PlayerColor.RED,
+                name = "Red",
+                pieces = redPieces,
+                isActive = true
+            ),
+            Player(
+                id = PlayerId(2),
+                color = PlayerColor.BLUE,
+                name = "Blue",
+                pieces = bluePieces,
                 isActive = true
             ),
             Player(

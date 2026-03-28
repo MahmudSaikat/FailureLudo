@@ -443,6 +443,8 @@ object GameRules {
         players: List<Player>,
         mode: GameMode
     ): Boolean {
+        if (Board.isSafeSquare(index)) return false
+
         return enemyStacksAtIndex(index, movingColor, players, mode)
             .any { stack -> stack.size >= 2 }
     }

@@ -377,6 +377,8 @@ fun GameBoardScreen(
                         modifier = Modifier.size(boardSize),
                         contentAlignment = Alignment.Center
                     ) {
+                        BoardPlayBackdrop(modifier = Modifier.matchParentSize())
+
                         LudoBoardCanvas(
                             allPieces = piecesMap,
                             movablePieceIds = movableSet,
@@ -757,6 +759,37 @@ private fun BoardSeatNamesOverlay(
                     .padding(8.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun BoardPlayBackdrop(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        // Soft translucent base so board whites blend into the play surface.
+        drawRect(color = Color.White.copy(alpha = 0.42f))
+
+        val minDim = size.minDimension
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+
+        drawCircle(
+            color = Secondary.copy(alpha = 0.10f),
+            radius = minDim * 0.52f,
+            center = Offset(centerX, centerY)
+        )
+
+        drawCircle(
+            color = Primary.copy(alpha = 0.08f),
+            radius = minDim * 0.74f,
+            center = Offset(centerX + minDim * 0.12f, centerY - minDim * 0.10f)
+        )
+
+        drawCircle(
+            color = Primary.copy(alpha = 0.12f),
+            radius = minDim * 0.40f,
+            center = Offset(centerX, centerY),
+            style = Stroke(width = minDim * 0.018f)
+        )
     }
 }
 
