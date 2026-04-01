@@ -226,10 +226,11 @@ object GameRules {
         players: List<Player>,
         mode: GameMode
     ): List<CaptureTarget> {
+        val movingRef = PieceRef(movingColor, piece.id)
         val ownSinglesAtCell = occupantsAtMainIndex(players, destinationIndex)
             .filter { occupant ->
-                occupant.color == movingColor &&
-                    occupant.piece.id != piece.id
+                isSameSide(movingColor, occupant.color, mode) &&
+                    PieceRef(occupant.color, occupant.piece.id) != movingRef
             }
 
         if (ownSinglesAtCell.isEmpty()) return emptyList()

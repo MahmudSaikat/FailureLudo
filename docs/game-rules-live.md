@@ -92,7 +92,8 @@ Code remains the source of truth, but this file is the human-readable baseline f
   - The top single on own double is protected (virtual safe) from enemy single capture.
   - Enemy single on your double is not protected from your captures.
   - Special immediate pair capture:
-    - If a player's single is already on top of an enemy double, and another single of that same player lands on that same cell, the two singles immediately form a pair and capture that enemy double immediately.
+    - If a player's single is already on top of an enemy double, and another single from the same side lands on that same cell, the two singles immediately form a pair and capture that enemy double immediately.
+    - In Team mode, "same side" includes both teammate colors.
 
 ## Optional Home-Entry Deferral (Human Players)
 
