@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,8 +52,15 @@ fun GameBoardScreen(
     val setup by viewModel.setupState.collectAsState()
     val feedbackSettings by viewModel.feedbackSettings.collectAsState()
     val pendingHomeEntryChoicePiece by viewModel.pendingHomeEntryChoicePiece.collectAsState()
+    val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val feedbackManager = remember { GameFeedbackManager() }
+    val feedbackManager = remember(context) { GameFeedbackManager(context) }
+
+    DisposableEffect(feedbackManager) {
+        onDispose {
+            feedbackManager.release()
+        }
+    }
 
     // Wire the game-over callback once
     LaunchedEffect(Unit) {
@@ -211,6 +219,12 @@ fun GameBoardScreen(
         FeedbackSettingsDialog(
             settings = feedbackSettings,
             onSettingsChange = viewModel::updateFeedbackSettings,
+            onTestCaptureSound = {
+                feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
+                if (feedbackSettings.hapticsEnabled) {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+            },
             onDismiss = { showFeedbackDialog = false }
         )
     }
@@ -550,7 +564,7 @@ private fun buildAnimationPaths(
                 .map { piece -> player.color to piece }
         }
 
-    return movedPieces.mapNotNull { (color, piece) ->
+    val movedPaths = movedPieces.mapNotNull { (color, piece) ->
         val key = color to piece.id
         val startPosition = previousPositions[key] ?: return@mapNotNull null
         val pathCells = computePieceAnimationCells(
@@ -562,6 +576,37 @@ private fun buildAnimationPaths(
         if (pathCells.size <= 1) return@mapNotNull null
         key to pathCells
     }
+
+    val movedKeys = movedPieces.map { (color, piece) -> color to piece.id }.toSet()
+    val currentPositions = extractPiecePositions(state)
+    val captureLeadFrames = (movedPaths.maxOfOrNull { (_, cells) -> cells.size } ?: 1) - 1
+
+    val capturedPaths = currentPositions.mapNotNull { (key, endPosition) ->
+        if (key in movedKeys) return@mapNotNull null
+
+        val startPosition = previousPositions[key] ?: return@mapNotNull null
+        if (endPosition !is PiecePosition.HomeBase || startPosition is PiecePosition.HomeBase) {
+            return@mapNotNull null
+        }
+
+        val pathCells = computePieceAnimationCells(
+            color = key.first,
+            pieceId = key.second,
+            start = startPosition,
+            end = endPosition
+        )
+        if (pathCells.size <= 1) return@mapNotNull null
+
+        val delayedPath = if (captureLeadFrames > 0) {
+            List(captureLeadFrames) { pathCells.first() } + pathCells
+        } else {
+            pathCells
+        }
+
+        key to delayedPath
+    }
+
+    return movedPaths + capturedPaths
 }
 
 private fun computePieceAnimationCells(
@@ -574,6 +619,24 @@ private fun computePieceAnimationCells(
         return pieceCell(color, pieceId, end)?.let { listOf(it) } ?: emptyList()
     }
 
+    val steps = if (end is PiecePosition.HomeBase && start !is PiecePosition.HomeBase) {
+        computeReverseStepsToHome(color, start)
+    } else {
+        computeForwardAnimationSteps(color, start, end)
+    }
+
+    if (steps.isEmpty()) {
+        return pieceCell(color, pieceId, end)?.let { listOf(it) } ?: emptyList()
+    }
+
+    return steps.mapNotNull { position -> pieceCell(color, pieceId, position) }
+}
+
+private fun computeForwardAnimationSteps(
+    color: PlayerColor,
+    start: PiecePosition,
+    end: PiecePosition
+): List<PiecePosition> {
     val steps = mutableListOf<PiecePosition>()
     var cursor = start
     steps += cursor
@@ -585,11 +648,47 @@ private fun computePieceAnimationCells(
         guard -= 1
     }
 
-    if (cursor != end) {
-        return pieceCell(color, pieceId, end)?.let { listOf(it) } ?: emptyList()
+    return if (cursor == end) steps else emptyList()
+}
+
+private fun computeReverseStepsToHome(
+    color: PlayerColor,
+    start: PiecePosition
+): List<PiecePosition> {
+    val steps = mutableListOf<PiecePosition>()
+    var cursor = start
+    steps += cursor
+
+    var guard = Board.MAIN_TRACK_SIZE + Board.HOME_COLUMN_STEPS + 8
+    while (cursor !is PiecePosition.HomeBase && guard > 0) {
+        cursor = previousAnimationStep(color, cursor)
+        steps += cursor
+        guard -= 1
     }
 
-    return steps.mapNotNull { position -> pieceCell(color, pieceId, position) }
+    return if (cursor is PiecePosition.HomeBase) steps else emptyList()
+}
+
+private fun previousAnimationStep(
+    color: PlayerColor,
+    current: PiecePosition
+): PiecePosition {
+    return when (current) {
+        PiecePosition.HomeBase -> PiecePosition.HomeBase
+        is PiecePosition.MainTrack -> {
+            val entry = Board.ENTRY_POSITIONS.getValue(color)
+            if (current.index == entry) {
+                PiecePosition.HomeBase
+            } else {
+                PiecePosition.MainTrack((current.index - 1 + Board.MAIN_TRACK_SIZE) % Board.MAIN_TRACK_SIZE)
+            }
+        }
+        is PiecePosition.HomeColumn -> {
+            if (current.step <= 1) PiecePosition.MainTrack(Board.HOME_COLUMN_ENTRY.getValue(color))
+            else PiecePosition.HomeColumn(current.step - 1)
+        }
+        PiecePosition.Finished -> PiecePosition.HomeColumn(Board.HOME_COLUMN_STEPS)
+    }
 }
 
 private fun nextAnimationStep(
@@ -924,6 +1023,7 @@ private fun FinishConfettiOverlay(
 private fun FeedbackSettingsDialog(
     settings: FeedbackSettings,
     onSettingsChange: (FeedbackSettings) -> Unit,
+    onTestCaptureSound: () -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -981,6 +1081,18 @@ private fun FeedbackSettingsDialog(
                     },
                     valueRange = 0f..1f
                 )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onTestCaptureSound,
+                        enabled = settings.soundEnabled
+                    ) {
+                        Text("Test capture sound")
+                    }
+                }
             }
         },
         confirmButton = {

@@ -1,5 +1,6 @@
 package com.failureludo.feedback
 
+import android.content.Context
 import android.media.AudioManager
 import android.media.ToneGenerator
 import com.failureludo.data.FeedbackSettings
@@ -15,10 +16,24 @@ enum class FeedbackEvent {
     WIN
 }
 
-class GameFeedbackManager {
+class GameFeedbackManager(context: Context) {
+
+    private val audioManager = GameAudioManager(context)
 
     fun emitSound(event: FeedbackEvent, settings: FeedbackSettings) {
         if (!settings.soundEnabled) return
+
+        val customSoundPlayed = audioManager.play(event, settings.masterVolume)
+        if (customSoundPlayed) return
+
+        playFallbackTone(event, settings.masterVolume)
+    }
+
+    fun release() {
+        audioManager.release()
+    }
+
+    private fun playFallbackTone(event: FeedbackEvent, masterVolume: Float) {
 
         val duration = when (event) {
             FeedbackEvent.DICE_ROLL -> 110
@@ -42,7 +57,7 @@ class GameFeedbackManager {
             FeedbackEvent.WIN -> ToneGenerator.TONE_CDMA_ABBR_ALERT
         }
 
-        val scaledVolume = (settings.masterVolume.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
+        val scaledVolume = (masterVolume.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
         val toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, scaledVolume)
         toneGenerator.startTone(toneType, duration.coerceAtLeast(30))
         toneGenerator.release()

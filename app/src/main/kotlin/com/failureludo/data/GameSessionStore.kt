@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.toArgb
 import com.failureludo.engine.DiceResult
 import com.failureludo.engine.GameEvent
 import com.failureludo.engine.GameMode
+import com.failureludo.engine.GameRules
 import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
 import com.failureludo.engine.PiecePosition
@@ -32,6 +33,7 @@ class GameSessionStore(private val context: Context) {
 
     companion object {
         private const val SESSION_SCHEMA_VERSION = 3
+        private val LEGACY_ONE_BASED_PIECE_IDS = setOf(1, 2, 3, 4)
     }
 
     private object Keys {
@@ -182,7 +184,21 @@ class GameSessionStore(private val context: Context) {
         else diceFromJson(json.getJSONObject("lastDice"))
 
         val diceByPlayer = diceByPlayerFromJson(json.getJSONObject("diceByPlayer"))
-        val movablePieces = json.getJSONArray("movablePieces").toObjectList { obj -> pieceFromJson(obj) }
+        val rawMovablePieces = json.getJSONArray("movablePieces").toObjectList { obj -> pieceFromJson(obj) }
+        val movablePieces = when {
+            turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION &&
+                lastDice != null &&
+                currentPlayerIndex in players.indices -> {
+                GameRules.movablePieces(
+                    player = players[currentPlayerIndex],
+                    diceValue = lastDice.value,
+                    allPlayers = players,
+                    mode = mode
+                )
+            }
+            turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION -> rawMovablePieces
+            else -> emptyList()
+        }
         val winnersRaw = json.getJSONArray("winners").toIntList()
         val winners = winnersRaw.map { PlayerId(it) }.takeIf { it.isNotEmpty() }
         val eventLog = json.getJSONArray("eventLog").toObjectList { obj -> eventFromJson(obj) }
@@ -219,14 +235,27 @@ class GameSessionStore(private val context: Context) {
             PlayerId(color.ordinal + 1)
         }
 
+        val pieces = normalizeLegacyPieceIds(
+            pieces = json.getJSONArray("pieces").toObjectList { pieceFromJson(it) }
+        )
+
         return Player(
             id = id,
             color = color,
             name = json.getString("name"),
             type = PlayerType.valueOf(json.getString("type")),
-            pieces = json.getJSONArray("pieces").toObjectList { pieceFromJson(it) },
+            pieces = pieces,
             isActive = json.getBoolean("isActive")
         )
+    }
+
+    private fun normalizeLegacyPieceIds(pieces: List<Piece>): List<Piece> {
+        val ids = pieces.map { it.id }.toSet()
+        return if (ids == LEGACY_ONE_BASED_PIECE_IDS) {
+            pieces.map { piece -> piece.copy(id = piece.id - 1) }
+        } else {
+            pieces
+        }
     }
 
     private fun pieceToJson(piece: Piece): JSONObject {

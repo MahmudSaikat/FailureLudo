@@ -60,7 +60,7 @@ object BoardCoordinates {
 
     /** Resolves a [piece]'s (row, col) on the visual grid. */
     fun cellFor(piece: Piece): Pair<Int, Int>? = when (val pos = piece.position) {
-        is PiecePosition.HomeBase    -> HOME_YARD_SPOTS[piece.color]?.get(piece.id)
+        is PiecePosition.HomeBase    -> HOME_YARD_SPOTS[piece.color]?.getOrNull(piece.id)
         is PiecePosition.MainTrack   -> MAIN_TRACK.getOrNull(pos.index)
         is PiecePosition.HomeColumn  -> HOME_COLUMNS[piece.color]?.getOrNull(pos.step - 1)
         PiecePosition.Finished       -> CENTER

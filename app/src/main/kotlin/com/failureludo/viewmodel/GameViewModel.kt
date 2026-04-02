@@ -6,10 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.failureludo.data.FeedbackSettings
 import com.failureludo.data.GamePreferencesStore
 import com.failureludo.data.GameSessionStore
+import com.failureludo.engine.Board
 import com.failureludo.engine.GameEngine
+import com.failureludo.engine.GameMode
 import com.failureludo.engine.GameRules
 import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
+import com.failureludo.engine.PiecePosition
 import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
@@ -380,18 +383,71 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun GameState.isRestorable(): Boolean {
-        if (players.isEmpty()) return false
+        if (players.size != PlayerColor.entries.size) return false
         if (currentPlayerIndex !in players.indices) return false
         if (players.map { it.color }.toSet().size != PlayerColor.entries.size) return false
 
-        val ids = players.map { it.id }
-        if (ids.distinct().size != players.size) return false
+        val playerIds = players.map { it.id }
+        if (playerIds.distinct().size != players.size) return false
+        if (diceByPlayer.keys != playerIds.toSet()) return false
 
-        if (turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION && lastDice == null) return false
+        val activePlayers = players.filter { it.isActive }
+        if (mode == GameMode.TEAM) {
+            if (activePlayers.size != PlayerColor.entries.size) return false
+        } else if (activePlayers.size !in 2..PlayerColor.entries.size) {
+            return false
+        }
 
-        if (mode == com.failureludo.engine.GameMode.TEAM) {
-            val activeCount = players.count { it.isActive }
-            if (activeCount != 4) return false
+        val current = players[currentPlayerIndex]
+        if (!current.isActive) return false
+
+        val diceSnapshot = lastDice
+        if (diceSnapshot != null) {
+            if (diceSnapshot.value !in 1..6) return false
+            if (diceSnapshot.rollCount !in 1..3) return false
+        }
+
+        players.forEach { player ->
+            if (player.pieces.size != 4) return false
+
+            val pieceIds = player.pieces.map { it.id }
+            if (pieceIds.distinct().size != player.pieces.size) return false
+            if (pieceIds.any { it !in 0..3 }) return false
+
+            player.pieces.forEach { piece ->
+                if (piece.color != player.color) return false
+                when (val position = piece.position) {
+                    is PiecePosition.MainTrack -> if (position.index !in 0 until Board.MAIN_TRACK_SIZE) return false
+                    is PiecePosition.HomeColumn -> if (position.step !in 1..Board.HOME_COLUMN_STEPS) return false
+                    PiecePosition.HomeBase,
+                    PiecePosition.Finished -> Unit
+                }
+            }
+        }
+
+        val winnersSnapshot = winners
+        val activePlayerIds = activePlayers.map { it.id }.toSet()
+        if (winnersSnapshot != null && winnersSnapshot.any { it !in activePlayerIds }) return false
+
+        when (turnPhase) {
+            TurnPhase.WAITING_FOR_ROLL -> {
+                if (movablePieces.isNotEmpty()) return false
+            }
+            TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
+                val dice = diceSnapshot ?: return false
+                val legalMoves = GameRules.movablePieces(current, dice.value, players, mode)
+                if (legalMoves.isEmpty()) return false
+                if (movablePieces.isEmpty()) return false
+                val legalSet = legalMoves.toSet()
+                if (movablePieces.any { it !in legalSet }) return false
+            }
+            TurnPhase.NO_MOVES_AVAILABLE -> {
+                if (diceSnapshot == null) return false
+                if (movablePieces.isNotEmpty()) return false
+            }
+            TurnPhase.GAME_OVER -> {
+                if (winnersSnapshot.isNullOrEmpty()) return false
+            }
         }
 
         return true
