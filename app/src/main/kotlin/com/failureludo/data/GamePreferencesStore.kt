@@ -13,7 +13,8 @@ data class FeedbackSettings(
     val soundEnabled: Boolean = true,
     val musicEnabled: Boolean = false,
     val hapticsEnabled: Boolean = true,
-    val masterVolume: Float = 0.8f
+    val masterVolume: Float = 0.8f,
+    val singleMoveAssistEnabled: Boolean = false
 )
 
 private val Context.feedbackPreferencesDataStore by preferencesDataStore(name = "feedback_preferences")
@@ -25,6 +26,7 @@ class GamePreferencesStore(private val context: Context) {
         val MUSIC_ENABLED = booleanPreferencesKey("music_enabled")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
         val MASTER_VOLUME = floatPreferencesKey("master_volume")
+        val SINGLE_MOVE_ASSIST_ENABLED = booleanPreferencesKey("single_move_assist_enabled")
     }
 
     val feedbackSettings: Flow<FeedbackSettings> = context.feedbackPreferencesDataStore.data
@@ -36,6 +38,7 @@ class GamePreferencesStore(private val context: Context) {
             prefs[Keys.MUSIC_ENABLED] = settings.musicEnabled
             prefs[Keys.HAPTICS_ENABLED] = settings.hapticsEnabled
             prefs[Keys.MASTER_VOLUME] = settings.masterVolume.coerceIn(0f, 1f)
+            prefs[Keys.SINGLE_MOVE_ASSIST_ENABLED] = settings.singleMoveAssistEnabled
         }
     }
 
@@ -44,7 +47,8 @@ class GamePreferencesStore(private val context: Context) {
             soundEnabled = this[Keys.SOUND_ENABLED] ?: true,
             musicEnabled = this[Keys.MUSIC_ENABLED] ?: false,
             hapticsEnabled = this[Keys.HAPTICS_ENABLED] ?: true,
-            masterVolume = (this[Keys.MASTER_VOLUME] ?: 0.8f).coerceIn(0f, 1f)
+            masterVolume = (this[Keys.MASTER_VOLUME] ?: 0.8f).coerceIn(0f, 1f),
+            singleMoveAssistEnabled = this[Keys.SINGLE_MOVE_ASSIST_ENABLED] ?: false
         )
     }
 }

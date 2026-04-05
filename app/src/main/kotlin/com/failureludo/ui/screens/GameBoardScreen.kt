@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.failureludo.data.FeedbackSettings
@@ -40,6 +41,38 @@ import com.failureludo.viewmodel.GameViewModel
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+internal data class BoardLayoutSizing(
+    val diceSize: Dp,
+    val railHeight: Dp,
+    val boardSize: Dp
+)
+
+internal fun computeBoardLayoutSizing(maxWidth: Dp, maxHeight: Dp): BoardLayoutSizing {
+    val boardFloorByWidthClass = when {
+        maxWidth < 600.dp -> 220.dp
+        maxWidth < 840.dp -> 260.dp
+        else -> 320.dp
+    }
+    val dicePadding = 24.dp
+    val diceMin = 18.dp
+    val diceMax = 56.dp
+    val diceSizeByWidth = (maxWidth * 0.12f).coerceIn(42.dp, diceMax)
+    val diceSizeByDesiredBoard = (((maxHeight - boardFloorByWidthClass) / 2f) - dicePadding)
+        .coerceIn(diceMin, diceMax)
+    val diceSizeByAbsoluteHeight = ((maxHeight / 2f) - dicePadding)
+        .coerceIn(diceMin, diceMax)
+    val diceSize = minOf(diceSizeByWidth, diceSizeByDesiredBoard, diceSizeByAbsoluteHeight)
+    val railHeight = diceSize + dicePadding
+    val boardHeightBudget = (maxHeight - railHeight * 2).coerceAtLeast(0.dp)
+    val boardSize = minOf(maxWidth, boardHeightBudget)
+
+    return BoardLayoutSizing(
+        diceSize = diceSize,
+        railHeight = railHeight,
+        boardSize = boardSize
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -340,12 +373,13 @@ fun GameBoardScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center
             ) {
-                val diceSize = (maxWidth * 0.12f).coerceIn(42.dp, 56.dp)
-                val railHeight = diceSize + 24.dp
-                val boardSize = minOf(
-                    maxWidth,
-                    (maxHeight - railHeight * 2).coerceAtLeast(140.dp)
+                val layoutSizing = computeBoardLayoutSizing(
+                    maxWidth = maxWidth,
+                    maxHeight = maxHeight
                 )
+                val diceSize = layoutSizing.diceSize
+                val railHeight = layoutSizing.railHeight
+                val boardSize = layoutSizing.boardSize
 
                 val playersByColor = gameState.players.associateBy { it.color }
 
@@ -468,7 +502,7 @@ fun GameBoardScreen(
     }
 }
 
-private data class StackMoveOption(
+internal data class StackMoveOption(
     val label: String,
     val piece: Piece,
     val tint: Color
@@ -478,46 +512,51 @@ private data class StackMoveChoiceState(
     val options: List<StackMoveOption>
 )
 
-private data class StackTapDecision(
+internal data class StackTapDecision(
     val autoPiece: Piece? = null,
     val options: List<StackMoveOption> = emptyList()
 )
 
-private fun resolveStackTapDecision(tapped: TappedCellPieces): StackTapDecision {
+internal fun resolveStackTapDecision(tapped: TappedCellPieces): StackTapDecision {
     val allPieces = tapped.allPieces
         .distinctBy { it.color to it.id }
         .sortedWith(compareBy<Piece>({ it.lastMovedAt }, { it.id }))
     val movablePieces = tapped.movablePieces
         .distinctBy { it.color to it.id }
         .sortedWith(compareBy<Piece>({ it.lastMovedAt }, { it.id }))
+    val preferredMovablePiece = tapped.preferredPiece?.let { preferred ->
+        movablePieces.firstOrNull { it.color == preferred.color && it.id == preferred.id }
+    }
 
     if (movablePieces.isEmpty()) return StackTapDecision()
     if (movablePieces.size == 1) return StackTapDecision(autoPiece = movablePieces.first())
 
+    fun defaultAutoPiece(): Piece = preferredMovablePiece ?: movablePieces.last()
+
     val mainIndex = (allPieces.firstOrNull()?.position as? PiecePosition.MainTrack)?.index
-        ?: return StackTapDecision(autoPiece = movablePieces.last())
+        ?: return StackTapDecision(autoPiece = defaultAutoPiece())
     val sameMainCell = allPieces.all { (it.position as? PiecePosition.MainTrack)?.index == mainIndex }
-    if (!sameMainCell) return StackTapDecision(autoPiece = movablePieces.last())
+    if (!sameMainCell) return StackTapDecision(autoPiece = defaultAutoPiece())
 
     // Safe squares should never open chooser for multi-stack taps.
     if (Board.isSafeSquare(mainIndex)) {
-        return StackTapDecision(autoPiece = movablePieces.last())
+        return StackTapDecision(autoPiece = defaultAutoPiece())
     }
 
     val sameColor = allPieces.all { it.color == allPieces.first().color }
     if (!sameColor) {
-        return StackTapDecision(autoPiece = movablePieces.last())
+        return StackTapDecision(autoPiece = defaultAutoPiece())
     }
 
     val color = allPieces.first().color
     val isLockedCell = mainIndex != Board.HOME_COLUMN_ENTRY.getValue(color)
     if (!isLockedCell) {
-        return StackTapDecision(autoPiece = movablePieces.last())
+        return StackTapDecision(autoPiece = defaultAutoPiece())
     }
 
     // 3-piece non-safe stack: explicit choice between top single and locked pair when both are legal.
     if (allPieces.size == 3) {
-        val topSingle = allPieces.maxWithOrNull(compareBy<Piece>({ it.lastMovedAt }, { it.id })) ?: return StackTapDecision(autoPiece = movablePieces.last())
+        val topSingle = allPieces.maxWithOrNull(compareBy<Piece>({ it.lastMovedAt }, { it.id })) ?: return StackTapDecision(autoPiece = defaultAutoPiece())
         val pairPieces = allPieces.filter { it != topSingle }
         val topSingleLegal = movablePieces.any { it.id == topSingle.id && it.color == topSingle.color }
         val pairRepresentative = pairPieces.firstOrNull { candidate ->
@@ -538,7 +577,7 @@ private fun resolveStackTapDecision(tapped: TappedCellPieces): StackTapDecision 
     }
 
     // 4-piece same-color stack rule is intentionally deferred. Keep deterministic auto-choice for now.
-    return StackTapDecision(autoPiece = movablePieces.last())
+    return StackTapDecision(autoPiece = defaultAutoPiece())
 }
 
 private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>, PiecePosition> {
@@ -1069,6 +1108,20 @@ private fun FeedbackSettingsDialog(
                         checked = settings.hapticsEnabled,
                         onCheckedChange = { enabled ->
                             onSettingsChange(settings.copy(hapticsEnabled = enabled))
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Auto-select single move")
+                    Switch(
+                        checked = settings.singleMoveAssistEnabled,
+                        onCheckedChange = { enabled ->
+                            onSettingsChange(settings.copy(singleMoveAssistEnabled = enabled))
                         }
                     )
                 }

@@ -14,19 +14,152 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.dp
 import com.failureludo.engine.Piece
 import com.failureludo.engine.PiecePosition
 import com.failureludo.engine.PlayerColor
 import com.failureludo.ui.screens.playerColor
 import com.failureludo.ui.screens.playerColorLight
 import com.failureludo.ui.theme.*
+import kotlin.math.max
 
 private const val GRID = 15
+private const val TAP_DIAGNOSTICS_ENABLED = false
+private const val TAP_DIAGNOSTICS_TAG = "LudoBoardTap"
+private const val USE_CELL_ONLY_TAP_SELECTION = false
+private const val MIN_EFFECTIVE_TOUCH_TARGET_DP = 48f
+private const val HIT_RADIUS_MULTIPLIER = 1.35f
+private const val MAX_EFFECTIVE_HIT_RADIUS_CELL_MULTIPLIER = 0.95f
+
+private const val PAWN_RADIUS_SINGLE_MULTIPLIER = 0.36f
+private const val PAWN_RADIUS_DOUBLE_MULTIPLIER = 0.33f
+private const val PAWN_RADIUS_TRIPLE_MULTIPLIER = 0.31f
+private const val PAWN_RADIUS_QUAD_MULTIPLIER = 0.29f
+
+private const val STACK_OFFSET_WIDE_MULTIPLIER = 0.22f
+private const val STACK_OFFSET_TRIAD_VERTICAL_MULTIPLIER = 0.17f
+private const val MAX_OVERFLOW_PER_AXIS_MULTIPLIER = 0.18f
 
 data class TappedCellPieces(
     val allPieces: List<Piece>,
-    val movablePieces: List<Piece>
+    val movablePieces: List<Piece>,
+    val preferredPiece: Piece? = null
 )
+
+internal data class PieceLayout(
+    val piece: Piece,
+    val cell: Pair<Int, Int>,
+    val center: Offset,
+    val radius: Float,
+    val isMovable: Boolean
+)
+
+internal data class HitCandidate(
+    val layout: PieceLayout,
+    val distance: Float
+)
+
+private val HitCandidateSelectionComparator = compareBy<HitCandidate>(
+    { it.distance },
+    { -it.layout.piece.lastMovedAt },
+    { it.layout.piece.id },
+    { it.layout.piece.color.ordinal }
+)
+
+private val PieceSelectionComparator = compareBy<Piece>(
+    { it.color.ordinal },
+    { it.id }
+)
+
+private inline fun debugTapDiagnostics(message: () -> String) {
+    if (TAP_DIAGNOSTICS_ENABLED) {
+        android.util.Log.d(TAP_DIAGNOSTICS_TAG, message())
+    }
+}
+
+internal fun selectBestHitCandidate(candidates: Sequence<HitCandidate>): HitCandidate? {
+    return candidates.minWithOrNull(HitCandidateSelectionComparator)
+}
+
+internal fun rankHitCandidatesForSelection(candidates: List<HitCandidate>): List<HitCandidate> {
+    return candidates.sortedWith(HitCandidateSelectionComparator)
+}
+
+private fun sortedPieces(layouts: List<PieceLayout>): List<Piece> {
+    return layouts
+        .map { it.piece }
+        .sortedWith(PieceSelectionComparator)
+}
+
+internal fun resolveTappedCellPieces(
+    tapOffset: Offset,
+    pieceLayouts: List<PieceLayout>,
+    cellSize: Float,
+    minTouchRadiusPx: Float
+): TappedCellPieces? {
+    val anchor = selectBestHitCandidate(
+        pieceLayouts
+            .asSequence()
+            .filter { it.isMovable }
+            .mapNotNull { layout ->
+                val distance = (tapOffset - layout.center).getDistance()
+                val hitRadius = effectiveHitRadius(
+                    visualRadius = layout.radius,
+                    cellSize = cellSize,
+                    minTouchRadiusPx = minTouchRadiusPx
+                )
+                if (distance <= hitRadius) HitCandidate(layout, distance) else null
+            }
+    )?.layout
+
+    if (anchor != null) {
+        val anchorCellLayouts = pieceLayouts.filter { it.cell == anchor.cell }
+        val movableAnchorCellLayouts = anchorCellLayouts.filter { it.isMovable }
+        if (movableAnchorCellLayouts.isNotEmpty()) {
+            return TappedCellPieces(
+                allPieces = sortedPieces(anchorCellLayouts),
+                movablePieces = sortedPieces(movableAnchorCellLayouts),
+                preferredPiece = anchor.piece
+            )
+        }
+    }
+
+    val fallbackCol = (tapOffset.x / cellSize).toInt().coerceIn(0, GRID - 1)
+    val fallbackRow = (tapOffset.y / cellSize).toInt().coerceIn(0, GRID - 1)
+    val fallbackCellLayouts = pieceLayouts.filter {
+        it.cell.first == fallbackRow && it.cell.second == fallbackCol
+    }
+    val fallbackMovableCellLayouts = fallbackCellLayouts.filter { it.isMovable }
+    if (fallbackMovableCellLayouts.isEmpty()) {
+        return null
+    }
+
+    return TappedCellPieces(
+        allPieces = sortedPieces(fallbackCellLayouts),
+        movablePieces = sortedPieces(fallbackMovableCellLayouts)
+    )
+}
+
+internal fun resolveCellOnlyTappedCellPieces(
+    tapOffset: Offset,
+    pieceLayouts: List<PieceLayout>,
+    cellSize: Float
+): TappedCellPieces? {
+    val fallbackCol = (tapOffset.x / cellSize).toInt().coerceIn(0, GRID - 1)
+    val fallbackRow = (tapOffset.y / cellSize).toInt().coerceIn(0, GRID - 1)
+    val fallbackCellLayouts = pieceLayouts.filter {
+        it.cell.first == fallbackRow && it.cell.second == fallbackCol
+    }
+    val fallbackMovableCellLayouts = fallbackCellLayouts.filter { it.isMovable }
+    if (fallbackMovableCellLayouts.isEmpty()) {
+        return null
+    }
+
+    return TappedCellPieces(
+        allPieces = sortedPieces(fallbackCellLayouts),
+        movablePieces = sortedPieces(fallbackMovableCellLayouts)
+    )
+}
 
 @Composable
 fun LudoBoardCanvas(
@@ -43,30 +176,49 @@ fun LudoBoardCanvas(
         modifier = modifier.pointerInput(allPieces, movablePieceIds, animatedPieceCells) {
             detectTapGestures { tapOffset ->
                 val cellSize = size.width / GRID.toFloat()
-                val col = (tapOffset.x / cellSize).toInt().coerceIn(0, GRID - 1)
-                val row = (tapOffset.y / cellSize).toInt().coerceIn(0, GRID - 1)
+                val minTouchRadiusPx = (MIN_EFFECTIVE_TOUCH_TARGET_DP.dp.toPx() / 2f)
 
-                // Collect full stack context from tapped cell so caller can apply rule-specific selection UX.
-                val tappedAllPieces = mutableListOf<Piece>()
-                val tappedMovablePieces = mutableListOf<Piece>()
-                for ((color, pieces) in allPieces) {
-                    for (piece in pieces) {
-                        val cell = animatedPieceCells[color to piece.id] ?: BoardCoordinates.cellFor(piece) ?: continue
-                        if (cell.first == row && cell.second == col) {
-                            tappedAllPieces += piece
-                            if ((color to piece.id) in movablePieceIds) {
-                                tappedMovablePieces += piece
-                            }
-                        }
-                    }
+                val pieceLayouts = buildPieceLayouts(
+                    allPieces = allPieces,
+                    movablePieceIds = movablePieceIds,
+                    animatedPieceCells = animatedPieceCells,
+                    cellSize = cellSize,
+                    boardSize = size.width.toFloat()
+                )
+                debugTapDiagnostics {
+                    "tap=(${tapOffset.x.format(1)}, ${tapOffset.y.format(1)}) cellSize=${cellSize.format(2)} " +
+                        "pieces=${pieceLayouts.size} movable=${pieceLayouts.count { it.isMovable }}"
                 }
 
-                if (tappedMovablePieces.isNotEmpty()) {
-                    onCellPiecesTapped(TappedCellPieces(
-                        allPieces = tappedAllPieces.sortedWith(compareBy<Piece>({ it.color.ordinal }, { it.id })),
-                        movablePieces = tappedMovablePieces.sortedWith(compareBy<Piece>({ it.color.ordinal }, { it.id }))
+                val tappedPieces = if (USE_CELL_ONLY_TAP_SELECTION) {
+                    resolveCellOnlyTappedCellPieces(
+                        tapOffset = tapOffset,
+                        pieceLayouts = pieceLayouts,
+                        cellSize = cellSize
                     )
+                } else {
+                    resolveTappedCellPieces(
+                        tapOffset = tapOffset,
+                        pieceLayouts = pieceLayouts,
+                        cellSize = cellSize,
+                        minTouchRadiusPx = minTouchRadiusPx
                     )
+                }
+
+                if (tappedPieces != null) {
+                    val preferred = tappedPieces.preferredPiece
+                    if (preferred != null) {
+                        debugTapDiagnostics {
+                            "anchor=${preferred.color}:${preferred.id}"
+                        }
+                    } else {
+                        val fallbackCol = (tapOffset.x / cellSize).toInt().coerceIn(0, GRID - 1)
+                        val fallbackRow = (tapOffset.y / cellSize).toInt().coerceIn(0, GRID - 1)
+                        debugTapDiagnostics {
+                            "fallbackCell=($fallbackRow,$fallbackCol) options=${tappedPieces.movablePieces.size}"
+                        }
+                    }
+                    onCellPiecesTapped(tappedPieces)
                 }
             }
         }
@@ -280,47 +432,36 @@ private fun DrawScope.drawAllPieces(
     textMeasurer: TextMeasurer,
     playerPalette: Map<PlayerColor, Color>
 ) {
-    // Group pieces by cell to handle stacking
-    val cellMap = mutableMapOf<Pair<Int, Int>, MutableList<Piece>>()
-    for ((_, pieces) in allPieces) {
-        for (piece in pieces) {
-            val cell = animatedPieceCells[piece.color to piece.id] ?: BoardCoordinates.cellFor(piece) ?: continue
-            cellMap.getOrPut(cell) { mutableListOf() }.add(piece)
-        }
-    }
+    val pieceLayouts = buildPieceLayouts(
+        allPieces = allPieces,
+        movablePieceIds = movable,
+        animatedPieceCells = animatedPieceCells,
+        cellSize = cellSize,
+        boardSize = size.width
+    )
+    val cellMap = pieceLayouts.groupBy { it.cell }
 
-    cellMap.forEach { (cell, pieces) ->
-        val (row, col) = cell
+    cellMap.forEach { (cell, layouts) ->
+        val (_, col) = cell
         val baseCx = (col + 0.5f) * cellSize
-        val baseCy = (row + 0.5f) * cellSize
-        val stackCount = pieces.size
+        val baseCy = (cell.first + 0.5f) * cellSize
+        val stackCount = layouts.size
+        val drawingOrder = layouts.sortedWith(
+            compareBy<PieceLayout>(
+                { it.isMovable },
+                { it.piece.lastMovedAt },
+                { it.piece.id },
+                { it.piece.color.ordinal }
+            )
+        )
 
-        pieces.forEachIndexed { i, piece ->
-            val isMovable = (piece.color to piece.id) in movable
-            // Slight offset for stacked pieces
-            val offset = when (pieces.size) {
-                1 -> Offset(0f, 0f)
-                2 -> if (i == 0) Offset(-cellSize * 0.2f, 0f) else Offset(cellSize * 0.2f, 0f)
-                3 -> listOf(
-                    Offset(-cellSize * 0.2f, cellSize * 0.15f),
-                    Offset(cellSize * 0.2f, cellSize * 0.15f),
-                    Offset(0f, -cellSize * 0.2f)
-                )[i]
-                else -> listOf(
-                    Offset(-cellSize * 0.18f, -cellSize * 0.18f),
-                    Offset(cellSize * 0.18f, -cellSize * 0.18f),
-                    Offset(-cellSize * 0.18f, cellSize * 0.18f),
-                    Offset(cellSize * 0.18f, cellSize * 0.18f)
-                ).getOrElse(i) { Offset.Zero }
-            }
-            val cx = baseCx + offset.x
-            val cy = baseCy + offset.y
-            val radius = when {
-                stackCount >= 4 -> cellSize * 0.24f
-                stackCount == 3 -> cellSize * 0.26f
-                stackCount == 2 -> cellSize * 0.28f
-                else -> cellSize * 0.30f
-            }
+        drawingOrder.forEach { layout ->
+            val piece = layout.piece
+            val isMovable = layout.isMovable
+            val cx = layout.center.x
+            val cy = layout.center.y
+            val radius = layout.radius
+            val outlineWidth = max(1.5f, cellSize * 0.05f)
 
             // Standardized selectable ring + glow
             if (isMovable) {
@@ -360,14 +501,14 @@ private fun DrawScope.drawAllPieces(
                 color  = Color.Black.copy(alpha = 0.3f),
                 radius = radius * 0.62f,
                 center = Offset(cx, cy + radius * 0.22f),
-                style  = Stroke(width = 2f)
+                style  = Stroke(width = outlineWidth)
             )
 
             drawCircle(
                 color  = Color.Black.copy(alpha = 0.3f),
                 radius = radius * 0.56f,
                 center = Offset(cx, cy - radius * 0.38f),
-                style  = Stroke(width = 2f)
+                style  = Stroke(width = outlineWidth)
             )
 
             // Head highlight
@@ -380,8 +521,8 @@ private fun DrawScope.drawAllPieces(
 
         if (stackCount > 1) {
             val badgeCenter = Offset(
-                x = baseCx + cellSize * 0.30f,
-                y = baseCy - cellSize * 0.30f
+                x = baseCx + cellSize * 0.34f,
+                y = baseCy - cellSize * 0.34f
             )
             val badgeRadius = cellSize * 0.16f
 
@@ -411,6 +552,118 @@ private fun DrawScope.drawAllPieces(
             }
         }
     }
+}
+
+private fun Float.format(scale: Int): String {
+    return java.lang.String.format(java.util.Locale.US, "%.${scale}f", this)
+}
+
+private fun buildPieceLayouts(
+    allPieces: Map<PlayerColor, List<Piece>>,
+    movablePieceIds: Set<Pair<PlayerColor, Int>>,
+    animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,
+    cellSize: Float,
+    boardSize: Float
+): List<PieceLayout> {
+    val cellMap = mutableMapOf<Pair<Int, Int>, MutableList<Piece>>()
+    for ((_, pieces) in allPieces) {
+        for (piece in pieces) {
+            val cell = animatedPieceCells[piece.color to piece.id] ?: BoardCoordinates.cellFor(piece) ?: continue
+            cellMap.getOrPut(cell) { mutableListOf() }.add(piece)
+        }
+    }
+
+    val layouts = mutableListOf<PieceLayout>()
+    cellMap.forEach { (cell, rawPieces) ->
+        val pieces = rawPieces.sortedWith(compareBy<Piece>({ it.color.ordinal }, { it.id }))
+        val stackCount = pieces.size
+        val radius = pieceRadiusForStack(stackCount, cellSize)
+        val baseCenter = Offset(
+            x = (cell.second + 0.5f) * cellSize,
+            y = (cell.first + 0.5f) * cellSize
+        )
+
+        pieces.forEachIndexed { index, piece ->
+            val rawOffset = stackOffsetFor(index, stackCount, cellSize)
+            val boundedOffset = clampOffsetToOverflow(rawOffset, radius, cellSize)
+            val boundedCenter = clampCenterToBoard(
+                center = baseCenter + boundedOffset,
+                radius = radius,
+                boardSize = boardSize
+            )
+
+            layouts += PieceLayout(
+                piece = piece,
+                cell = cell,
+                center = boundedCenter,
+                radius = radius,
+                isMovable = (piece.color to piece.id) in movablePieceIds
+            )
+        }
+    }
+
+    return layouts
+}
+
+internal fun pieceRadiusForStack(stackCount: Int, cellSize: Float): Float {
+    return when {
+        stackCount >= 4 -> cellSize * PAWN_RADIUS_QUAD_MULTIPLIER
+        stackCount == 3 -> cellSize * PAWN_RADIUS_TRIPLE_MULTIPLIER
+        stackCount == 2 -> cellSize * PAWN_RADIUS_DOUBLE_MULTIPLIER
+        else -> cellSize * PAWN_RADIUS_SINGLE_MULTIPLIER
+    }
+}
+
+internal fun stackOffsetFor(index: Int, stackCount: Int, cellSize: Float): Offset {
+    return when (stackCount) {
+        1 -> Offset.Zero
+        2 -> if (index == 0) {
+            Offset(-cellSize * STACK_OFFSET_WIDE_MULTIPLIER, 0f)
+        } else {
+            Offset(cellSize * STACK_OFFSET_WIDE_MULTIPLIER, 0f)
+        }
+
+        3 -> listOf(
+            Offset(-cellSize * STACK_OFFSET_WIDE_MULTIPLIER, cellSize * STACK_OFFSET_TRIAD_VERTICAL_MULTIPLIER),
+            Offset(cellSize * STACK_OFFSET_WIDE_MULTIPLIER, cellSize * STACK_OFFSET_TRIAD_VERTICAL_MULTIPLIER),
+            Offset(0f, -cellSize * STACK_OFFSET_WIDE_MULTIPLIER)
+        ).getOrElse(index) { Offset.Zero }
+
+        else -> listOf(
+            Offset(-cellSize * STACK_OFFSET_WIDE_MULTIPLIER, -cellSize * STACK_OFFSET_WIDE_MULTIPLIER),
+            Offset(cellSize * STACK_OFFSET_WIDE_MULTIPLIER, -cellSize * STACK_OFFSET_WIDE_MULTIPLIER),
+            Offset(-cellSize * STACK_OFFSET_WIDE_MULTIPLIER, cellSize * STACK_OFFSET_WIDE_MULTIPLIER),
+            Offset(cellSize * STACK_OFFSET_WIDE_MULTIPLIER, cellSize * STACK_OFFSET_WIDE_MULTIPLIER)
+        ).getOrElse(index) { Offset.Zero }
+    }
+}
+
+internal fun clampOffsetToOverflow(offset: Offset, radius: Float, cellSize: Float): Offset {
+    val maxCenterOffset = ((cellSize * 0.5f) + (cellSize * MAX_OVERFLOW_PER_AXIS_MULTIPLIER) - radius)
+        .coerceAtLeast(0f)
+    return Offset(
+        x = offset.x.coerceIn(-maxCenterOffset, maxCenterOffset),
+        y = offset.y.coerceIn(-maxCenterOffset, maxCenterOffset)
+    )
+}
+
+private fun clampCenterToBoard(center: Offset, radius: Float, boardSize: Float): Offset {
+    val minCoord = radius
+    val maxCoord = (boardSize - radius).coerceAtLeast(minCoord)
+    return Offset(
+        x = center.x.coerceIn(minCoord, maxCoord),
+        y = center.y.coerceIn(minCoord, maxCoord)
+    )
+}
+
+internal fun effectiveHitRadius(
+    visualRadius: Float,
+    cellSize: Float,
+    minTouchRadiusPx: Float
+): Float {
+    val boostedRadius = max(visualRadius * HIT_RADIUS_MULTIPLIER, minTouchRadiusPx)
+    val cappedRadius = cellSize * MAX_EFFECTIVE_HIT_RADIUS_CELL_MULTIPLIER
+    return boostedRadius.coerceAtMost(cappedRadius)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
