@@ -38,8 +38,8 @@ class GameAudioManager(context: Context) {
 
     private val eventMixConfig: Map<FeedbackEvent, EventMixConfig> = mapOf(
         FeedbackEvent.DICE_ROLL to EventMixConfig(gain = 0.85f, pitchMin = 0.97f, pitchMax = 1.03f),
-        FeedbackEvent.PIECE_MOVE to EventMixConfig(gain = 0.28f, pitchMin = 0.98f, pitchMax = 1.02f),
-        FeedbackEvent.CAPTURE to EventMixConfig(gain = 1.00f),
+        FeedbackEvent.PIECE_MOVE to EventMixConfig(gain = 0.38f, pitchMin = 0.98f, pitchMax = 1.02f),
+        FeedbackEvent.CAPTURE to EventMixConfig(gain = 1.20f),
         FeedbackEvent.PIECE_FINISH to EventMixConfig(gain = 0.24f),
         FeedbackEvent.EXTRA_ROLL to EventMixConfig(gain = 0.23f),
         FeedbackEvent.TURN_SKIP to EventMixConfig(gain = 0.24f),

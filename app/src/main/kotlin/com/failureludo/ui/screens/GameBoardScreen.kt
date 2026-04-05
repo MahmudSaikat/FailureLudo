@@ -19,7 +19,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +48,16 @@ internal data class BoardLayoutSizing(
     val diceSize: Dp,
     val railHeight: Dp,
     val boardSize: Dp
+)
+
+private const val PIECE_MOVE_STEP_DELAY_MS = 130L
+private const val PIECE_MOVE_SETTLE_DELAY_MS = 120L
+private const val CAPTURE_RETURN_ACCELERATION_THRESHOLD = 8
+
+private data class PieceAnimationPlan(
+    val paths: List<Pair<Pair<PlayerColor, Int>, List<Pair<Int, Int>>>> = emptyList(),
+    val movingPieceStepCount: Int = 0,
+    val hasCapture: Boolean = false
 )
 
 internal fun computeBoardLayoutSizing(maxWidth: Dp, maxHeight: Dp): BoardLayoutSizing {
@@ -108,6 +120,7 @@ fun GameBoardScreen(
     }
 
     val gameState = state!!
+    val latestFeedbackSettings by rememberUpdatedState(feedbackSettings)
 
     var showQuitDialog by remember { mutableStateOf(false) }
     var showFeedbackDialog by remember { mutableStateOf(false) }
@@ -123,18 +136,23 @@ fun GameBoardScreen(
     var previousPiecePositions by remember { mutableStateOf<Map<Pair<PlayerColor, Int>, PiecePosition>?>(null) }
     var previousMoveCounter by remember { mutableLongStateOf(-1L) }
 
-    val precomputedAnimationPaths = remember(
+    val precomputedAnimationPlan = remember(
         gameState.players,
         gameState.moveCounter,
         previousPiecePositions,
         previousMoveCounter
     ) {
-        buildAnimationPaths(
+        buildAnimationPlan(
             state = gameState,
             previousPositions = previousPiecePositions,
             previousMoveCounter = previousMoveCounter
         )
     }
+
+    val precomputedAnimationPaths = precomputedAnimationPlan.paths
+    val movingPieceStepCount = precomputedAnimationPlan.movingPieceStepCount
+    val hasCaptureDuringAnimation = precomputedAnimationPlan.hasCapture
+    val isMovementAnimationActive = precomputedAnimationPaths.isNotEmpty() || animatedPieceCells.isNotEmpty()
 
     val firstFrameAnimationCells = remember(precomputedAnimationPaths) {
         precomputedAnimationPaths.associate { (key, cells) -> key to cells.first() }
@@ -157,11 +175,22 @@ fun GameBoardScreen(
                         val cell = cells.getOrNull(stepIndex) ?: cells.last()
                         animatedPieceCells[key] = cell
                     }
+
+                    if (stepIndex in 1 until movingPieceStepCount) {
+                        val isCaptureLandingStep = hasCaptureDuringAnimation &&
+                            stepIndex == movingPieceStepCount - 1
+                        if (isCaptureLandingStep) {
+                            feedbackManager.emitSound(FeedbackEvent.CAPTURE, latestFeedbackSettings)
+                        } else {
+                            feedbackManager.emitSound(FeedbackEvent.PIECE_MOVE, latestFeedbackSettings)
+                        }
+                    }
+
                     if (stepIndex < maxSteps - 1) {
-                        kotlinx.coroutines.delay(85L)
+                        kotlinx.coroutines.delay(PIECE_MOVE_STEP_DELAY_MS)
                     }
                 }
-                kotlinx.coroutines.delay(70L)
+                kotlinx.coroutines.delay(PIECE_MOVE_SETTLE_DELAY_MS)
                 animatedPieceCells.clear()
             }
         } else if (previousMoveCounter >= 0L && gameState.moveCounter != previousMoveCounter) {
@@ -188,7 +217,10 @@ fun GameBoardScreen(
             gameState.eventLog.subList(previousEventSize, gameState.eventLog.size).forEach { event ->
                 when (event) {
                     is GameEvent.PieceCaptured -> {
-                        feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
+                        val shouldSequenceCaptureAudio = hasCaptureDuringAnimation && movingPieceStepCount > 1
+                        if (!shouldSequenceCaptureAudio) {
+                            feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
+                        }
                         captureFxColor = playerColor(event.byColor, setup.playerColors)
                         captureFxTrigger += 1
                         if (feedbackSettings.hapticsEnabled) {
@@ -219,9 +251,7 @@ fun GameBoardScreen(
                     }
 
                     is GameEvent.PieceMoved,
-                    is GameEvent.PieceEnteredBoard -> {
-                        feedbackManager.emitSound(FeedbackEvent.PIECE_MOVE, feedbackSettings)
-                    }
+                    is GameEvent.PieceEnteredBoard -> Unit
                 }
             }
         }
@@ -263,10 +293,29 @@ fun GameBoardScreen(
     }
 
     if (pendingHomeEntryChoicePiece != null) {
+        val previewTint = playerColor(pendingHomeEntryChoicePiece!!.color, setup.playerColors)
         AlertDialog(
             onDismissRequest = { viewModel.dismissHomeEntryChoice() },
             title = { Text("Choose Pawn Path") },
-            text = { Text("This move can enter the finishing path. Do you want to enter now or continue circulating on the main track?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("This move can enter the finishing path. Choose how this pawn should continue.")
+
+                    HomeEntryOptionPreviewCard(
+                        title = "Enter Finish",
+                        description = "Turn into home column and progress toward the center.",
+                        tint = previewTint,
+                        enterHomePath = true
+                    )
+
+                    HomeEntryOptionPreviewCard(
+                        title = "Keep Circulating",
+                        description = "Stay on the main track for another full round.",
+                        tint = previewTint,
+                        enterHomePath = false
+                    )
+                }
+            },
             confirmButton = {
                 TextButton(onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = true) }) {
                     Text("Enter Finish")
@@ -402,8 +451,13 @@ fun GameBoardScreen(
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                onRoll = { viewModel.rollDice() },
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
+                                    !isMovementAnimationActive,
+                                onRoll = {
+                                    if (!isMovementAnimationActive) {
+                                        viewModel.rollDice()
+                                    }
+                                },
                                 size = diceSize
                             )
                         }
@@ -414,8 +468,13 @@ fun GameBoardScreen(
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                onRoll = { viewModel.rollDice() },
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
+                                    !isMovementAnimationActive,
+                                onRoll = {
+                                    if (!isMovementAnimationActive) {
+                                        viewModel.rollDice()
+                                    }
+                                },
                                 size = diceSize
                             )
                         }
@@ -478,8 +537,13 @@ fun GameBoardScreen(
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                onRoll = { viewModel.rollDice() },
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
+                                    !isMovementAnimationActive,
+                                onRoll = {
+                                    if (!isMovementAnimationActive) {
+                                        viewModel.rollDice()
+                                    }
+                                },
                                 size = diceSize
                             )
                         }
@@ -490,8 +554,13 @@ fun GameBoardScreen(
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN,
-                                onRoll = { viewModel.rollDice() },
+                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
+                                    !isMovementAnimationActive,
+                                onRoll = {
+                                    if (!isMovementAnimationActive) {
+                                        viewModel.rollDice()
+                                    }
+                                },
                                 size = diceSize
                             )
                         }
@@ -588,13 +657,13 @@ private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>,
         .toMap()
 }
 
-private fun buildAnimationPaths(
+private fun buildAnimationPlan(
     state: GameState,
     previousPositions: Map<Pair<PlayerColor, Int>, PiecePosition>?,
     previousMoveCounter: Long
-): List<Pair<Pair<PlayerColor, Int>, List<Pair<Int, Int>>>> {
-    if (previousPositions == null) return emptyList()
-    if (previousMoveCounter < 0L || state.moveCounter <= previousMoveCounter) return emptyList()
+): PieceAnimationPlan {
+    if (previousPositions == null) return PieceAnimationPlan()
+    if (previousMoveCounter < 0L || state.moveCounter <= previousMoveCounter) return PieceAnimationPlan()
 
     val movedPieces = state.players
         .flatMap { player ->
@@ -616,6 +685,8 @@ private fun buildAnimationPaths(
         key to pathCells
     }
 
+    val movedStepCount = movedPaths.maxOfOrNull { (_, cells) -> cells.size } ?: 0
+
     val movedKeys = movedPieces.map { (color, piece) -> color to piece.id }.toSet()
     val currentPositions = extractPiecePositions(state)
     val captureLeadFrames = (movedPaths.maxOfOrNull { (_, cells) -> cells.size } ?: 1) - 1
@@ -636,16 +707,142 @@ private fun buildAnimationPaths(
         )
         if (pathCells.size <= 1) return@mapNotNull null
 
+        val acceleratedCaptureCells = accelerateCapturedReturnPath(pathCells)
+
         val delayedPath = if (captureLeadFrames > 0) {
-            List(captureLeadFrames) { pathCells.first() } + pathCells
+            List(captureLeadFrames) { acceleratedCaptureCells.first() } + acceleratedCaptureCells
         } else {
-            pathCells
+            acceleratedCaptureCells
         }
 
         key to delayedPath
     }
 
-    return movedPaths + capturedPaths
+    return PieceAnimationPlan(
+        paths = movedPaths + capturedPaths,
+        movingPieceStepCount = movedStepCount,
+        hasCapture = capturedPaths.isNotEmpty()
+    )
+}
+
+private fun accelerateCapturedReturnPath(pathCells: List<Pair<Int, Int>>): List<Pair<Int, Int>> {
+    if (pathCells.size < CAPTURE_RETURN_ACCELERATION_THRESHOLD) return pathCells
+
+    val accelerated = mutableListOf<Pair<Int, Int>>()
+    accelerated += pathCells.first()
+
+    var index = 1
+    while (index < pathCells.lastIndex) {
+        accelerated += pathCells[index]
+        index += 2
+    }
+
+    if (accelerated.last() != pathCells.last()) {
+        accelerated += pathCells.last()
+    }
+
+    return accelerated
+}
+
+@Composable
+private fun HomeEntryOptionPreviewCard(
+    title: String,
+    description: String,
+    tint: Color,
+    enterHomePath: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HomeEntryPathMiniPreview(
+            tint = tint,
+            enterHomePath = enterHomePath,
+            modifier = Modifier
+                .width(76.dp)
+                .height(42.dp)
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = tint.copy(alpha = 0.95f)
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = OnSurface.copy(alpha = 0.80f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeEntryPathMiniPreview(
+    tint: Color,
+    enterHomePath: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val lineWidth = size.minDimension * 0.14f
+        val baseY = size.height * 0.72f
+        val start = Offset(size.width * 0.10f, baseY)
+
+        if (enterHomePath) {
+            val laneTurn = Offset(size.width * 0.58f, baseY)
+            val finish = Offset(laneTurn.x, size.height * 0.20f)
+
+            drawLine(
+                color = tint.copy(alpha = 0.85f),
+                start = start,
+                end = laneTurn,
+                strokeWidth = lineWidth,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = tint.copy(alpha = 0.85f),
+                start = laneTurn,
+                end = finish,
+                strokeWidth = lineWidth,
+                cap = StrokeCap.Round
+            )
+
+            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = start)
+            drawCircle(color = tint.copy(alpha = 0.98f), radius = lineWidth * 0.58f, center = finish)
+            drawCircle(color = Color.White.copy(alpha = 0.9f), radius = lineWidth * 0.22f, center = finish)
+        } else {
+            val end = Offset(size.width * 0.90f, baseY)
+
+            drawLine(
+                color = tint.copy(alpha = 0.85f),
+                start = start,
+                end = end,
+                strokeWidth = lineWidth,
+                cap = StrokeCap.Round
+            )
+
+            drawArc(
+                color = tint.copy(alpha = 0.72f),
+                startAngle = 210f,
+                sweepAngle = 290f,
+                useCenter = false,
+                topLeft = Offset(size.width * 0.52f, size.height * 0.18f),
+                size = Size(size.width * 0.34f, size.height * 0.50f),
+                style = Stroke(width = lineWidth * 0.7f, cap = StrokeCap.Round)
+            )
+
+            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = start)
+            drawCircle(color = tint.copy(alpha = 0.95f), radius = lineWidth * 0.45f, center = end)
+        }
+    }
 }
 
 private fun computePieceAnimationCells(
