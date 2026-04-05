@@ -1,6 +1,6 @@
 # FailureLudo Live Rules (Current Implementation)
 
-Last updated: 2026-03-28
+Last updated: 2026-04-06
 
 This document describes the rules as currently implemented in the game engine.
 Code remains the source of truth, but this file is the human-readable baseline for future rule changes.
@@ -136,6 +136,17 @@ Extra roll is granted when:
 - Team 0: RED + YELLOW
 - Team 1: BLUE + GREEN
 - A team wins when both active members have all pieces finished.
+
+## Team Dice Sharing Unlock (TEAM mode)
+
+- Before unlock, each teammate can only use their own rolled dice with their own color pieces.
+- Unlock condition is historical and permanent for that team:
+  - each teammate must have brought at least one pawn out of `HomeBase` at least once.
+  - this condition remains satisfied even if one or both of those pawns are later captured.
+- Unlock timing:
+  - the turn where a teammate first brings out their first pawn is still restricted to that player's own color pieces.
+  - shared teammate-dice control becomes active from subsequent turns after that turn finishes.
+- After unlock, either teammate can use their rolled dice to move either teammate's pieces, including taking teammate pawns out of `HomeBase`.
 
 ## Bot Piece Selection Priority
 

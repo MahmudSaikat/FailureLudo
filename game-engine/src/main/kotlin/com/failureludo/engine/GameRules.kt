@@ -25,6 +25,35 @@ object GameRules {
             canMove(piece, diceValue, player, allPlayers, mode)
         }
 
+    /**
+     * Returns movable pieces for the full turn, including teammate piece control
+     * when TEAM shared-dice mode has been unlocked for the current player's team.
+     */
+    fun movablePiecesForTurn(
+        currentPlayer: Player,
+        diceValue: Int,
+        allPlayers: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL,
+        sharedTeamDiceEnabled: Set<Int> = emptySet()
+    ): List<Piece> {
+        val controllablePlayers = if (
+            mode == GameMode.TEAM && currentPlayer.color.teamIndex in sharedTeamDiceEnabled
+        ) {
+            val teammates = allPlayers.filter { candidate ->
+                candidate.isActive &&
+                    candidate.color.teamIndex == currentPlayer.color.teamIndex &&
+                    candidate.id != currentPlayer.id
+            }
+            listOf(currentPlayer) + teammates
+        } else {
+            listOf(currentPlayer)
+        }
+
+        return controllablePlayers
+            .flatMap { player -> movablePieces(player, diceValue, allPlayers, mode) }
+            .distinctBy { piece -> piece.color to piece.id }
+    }
+
     /** True if [piece] has at least one legal move for [diceValue]. */
     fun canMove(
         piece: Piece,

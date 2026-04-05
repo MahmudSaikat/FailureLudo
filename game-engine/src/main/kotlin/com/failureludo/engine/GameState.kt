@@ -33,6 +33,11 @@ data class GameState(
     val lastDice: DiceResult? = null,
     val diceByPlayer: Map<PlayerId, Int?> = PlayerColor.entries
         .associate { PlayerId(it.ordinal + 1) to null },
+    /** True once a player has ever taken at least one pawn out of HomeBase. */
+    val hasEnteredBoardAtLeastOnce: Map<PlayerId, Boolean> = PlayerColor.entries
+        .associate { PlayerId(it.ordinal + 1) to false },
+    /** Team indices that have unlocked shared teammate-dice control in TEAM mode. */
+    val sharedTeamDiceEnabled: Set<Int> = emptySet(),
     val movablePieces: List<Piece> = emptyList(),
     val winners: List<PlayerId>? = null,
     /** History of significant events for display (e.g. "Red captured Green"). */

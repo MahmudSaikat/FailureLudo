@@ -94,7 +94,13 @@ object GameEngine {
         }
 
         val diceResult = DiceResult(diceValue, rollCount)
-        val movable = GameRules.movablePieces(state.currentPlayer, diceValue, state.players, state.mode)
+        val movable = GameRules.movablePiecesForTurn(
+            currentPlayer = state.currentPlayer,
+            diceValue = diceValue,
+            allPlayers = state.players,
+            mode = state.mode,
+            sharedTeamDiceEnabled = state.sharedTeamDiceEnabled
+        )
 
         val newPhase = if (movable.isEmpty()) TurnPhase.NO_MOVES_AVAILABLE
                        else TurnPhase.WAITING_FOR_PIECE_SELECTION
@@ -139,14 +145,32 @@ object GameEngine {
         require(piece in state.movablePieces) { "Piece ${piece.id} is not movable." }
 
         val diceValue = state.lastDice!!.value
-        val playerId = state.currentPlayer.id
-        val color = state.currentPlayer.color
+        val movingPlayer = state.players.firstOrNull { it.color == piece.color }
+            ?: error("Moving player not found for color ${piece.color}")
+        val movingPlayerId = movingPlayer.id
+        val movingColor = piece.color
+        val actingPlayerId = state.currentPlayer.id
+        val actingColor = state.currentPlayer.color
 
         // Compute destination
-        val destination = GameRules.computeDestination(piece, diceValue, color, state.players, state.mode, deferHomeEntry)!!
+        val destination = GameRules.computeDestination(
+            piece,
+            diceValue,
+            movingColor,
+            state.players,
+            state.mode,
+            deferHomeEntry
+        )!!
 
         // Count captures BEFORE applying move
-        val captureTargets = GameRules.captureTargets(piece, diceValue, color, state.players, state.mode, deferHomeEntry)
+        val captureTargets = GameRules.captureTargets(
+            piece,
+            diceValue,
+            movingColor,
+            state.players,
+            state.mode,
+            deferHomeEntry
+        )
         val captureCount = captureTargets.size
 
         // Apply the move
@@ -154,7 +178,7 @@ object GameEngine {
         val newPlayers = GameRules.applyMove(
             piece = piece,
             diceValue = diceValue,
-            color = color,
+            color = movingColor,
             players = state.players,
             mode = state.mode,
             deferHomeEntry = deferHomeEntry,
@@ -165,12 +189,20 @@ object GameEngine {
         val events = mutableListOf<GameEvent>()
         val isEntering = piece.position is PiecePosition.HomeBase
         if (isEntering) {
-            events += GameEvent.PieceEnteredBoard(playerId = playerId, color = color, pieceId = piece.id)
+            events += GameEvent.PieceEnteredBoard(
+                playerId = movingPlayerId,
+                color = movingColor,
+                pieceId = piece.id
+            )
         } else {
-            events += GameEvent.PieceMoved(playerId = playerId, color = color, pieceId = piece.id)
+            events += GameEvent.PieceMoved(playerId = movingPlayerId, color = movingColor, pieceId = piece.id)
         }
         if (destination is PiecePosition.Finished) {
-            events += GameEvent.PieceFinished(playerId = playerId, color = color, pieceId = piece.id)
+            events += GameEvent.PieceFinished(
+                playerId = movingPlayerId,
+                color = movingColor,
+                pieceId = piece.id
+            )
         }
 
         // Capture events
@@ -180,15 +212,22 @@ object GameEngine {
             events += GameEvent.PieceCaptured(
                 capturedPlayerId = capturedPlayerId,
                 capturedColor = target.color,
-                byPlayerId = playerId,
-                byColor = color
+                byPlayerId = actingPlayerId,
+                byColor = movingColor
             )
+        }
+
+        val updatedEnteredBoardFlags = state.hasEnteredBoardAtLeastOnce.toMutableMap().apply {
+            if (isEntering) {
+                this[movingPlayerId] = true
+            }
         }
 
         val newState = state.copy(
             players = newPlayers,
             moveCounter = newMoveCounter,
             eventLog = state.eventLog + events,
+            hasEnteredBoardAtLeastOnce = updatedEnteredBoardFlags,
             movablePieces = emptyList()
         )
 
@@ -211,8 +250,8 @@ object GameEngine {
                 turnPhase = TurnPhase.WAITING_FOR_ROLL,
                 lastDice = DiceResult(diceValue, state.lastDice.rollCount),
                 eventLog = newState.eventLog + GameEvent.ExtraRollGranted(
-                    playerId = playerId,
-                    color = color,
+                    playerId = actingPlayerId,
+                    color = actingColor,
                     reason = reason
                 )
             )
@@ -233,22 +272,21 @@ object GameEngine {
     fun botChoosePiece(state: GameState): Piece {
         val movable = state.movablePieces
         val diceValue = state.lastDice!!.value
-        val color = state.currentPlayer.color
 
         // 1. Capture
         movable.firstOrNull { piece ->
-            GameRules.countCaptures(piece, diceValue, color, state.players, state.mode) > 0
+            GameRules.countCaptures(piece, diceValue, piece.color, state.players, state.mode) > 0
         }?.let { return it }
 
         // 2. Finish
         movable.firstOrNull { piece ->
-            GameRules.computeDestination(piece, diceValue, color, state.players, state.mode) is PiecePosition.Finished
+            GameRules.computeDestination(piece, diceValue, piece.color, state.players, state.mode) is PiecePosition.Finished
         }?.let { return it }
 
         // 3. Move the most-advanced active piece
         movable
             .filter { it.isActive }
-            .maxByOrNull { pieceProgress(it, color) }
+            .maxByOrNull { pieceProgress(it, it.color) }
             ?.let { return it }
 
         // 4. Enter from home base
@@ -259,11 +297,34 @@ object GameEngine {
 
     private fun advanceToNextTurn(state: GameState): GameState {
         val nextIdx = GameRules.nextPlayerIndex(state.currentPlayerIndex, state.players)
+        val sharedTeamDiceEnabled = computeSharedTeamDiceEnabled(state)
         return state.copy(
             currentPlayerIndex = nextIdx,
             turnPhase = TurnPhase.WAITING_FOR_ROLL,
-            lastDice = null
+            lastDice = null,
+            sharedTeamDiceEnabled = sharedTeamDiceEnabled
         )
+    }
+
+    private fun computeSharedTeamDiceEnabled(state: GameState): Set<Int> {
+        if (state.mode != GameMode.TEAM) return emptySet()
+
+        val unlocked = state.sharedTeamDiceEnabled.toMutableSet()
+        val activeByTeam = state.players
+            .filter { it.isActive }
+            .groupBy { it.color.teamIndex }
+
+        activeByTeam.forEach { (teamIndex, teamPlayers) ->
+            if (teamPlayers.size < 2) return@forEach
+            val bothHaveEntered = teamPlayers.all { teammate ->
+                state.hasEnteredBoardAtLeastOnce[teammate.id] == true
+            }
+            if (bothHaveEntered) {
+                unlocked += teamIndex
+            }
+        }
+
+        return unlocked
     }
 
     /** Rough numeric progress value for a piece (higher = closer to finishing). */

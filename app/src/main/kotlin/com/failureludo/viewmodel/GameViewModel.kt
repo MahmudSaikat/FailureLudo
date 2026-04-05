@@ -16,6 +16,7 @@ import com.failureludo.engine.PiecePosition
 import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,23 +47,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            val restoredSetup = sessionStore.loadSetupState()
-            val restoredGame = sessionStore.loadGameState()
+            try {
+                val restoredSetup = sessionStore.loadSetupState()
+                val restoredGame = sessionStore.loadGameState()
 
-            restoredSetup?.let {
-                _setupState.value = restoredSetup
+                restoredSetup?.let {
+                    _setupState.value = restoredSetup
+                }
+
+                val validRestoredGame = restoredGame?.takeIf(::isRestorableGameStateSafely)
+                if (validRestoredGame != null) {
+                    _gameState.value = validRestoredGame
+                    checkForBotTurn()
+                } else if (restoredGame != null) {
+                    // Drop corrupt/incomplete snapshots so Resume is hidden instead of crashing.
+                    clearSavedGameSnapshotSafely()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // Any unexpected restore failure should fail closed, not crash app startup.
+                clearSavedGameSnapshotSafely()
+            } finally {
+                _isSessionRestored.value = true
             }
-
-            val validRestoredGame = restoredGame?.takeIf(::isRestorableGameState)
-            if (validRestoredGame != null) {
-                _gameState.value = validRestoredGame
-                checkForBotTurn()
-            } else if (restoredGame != null) {
-                // Drop corrupt/incomplete snapshots so Resume is hidden instead of crashing.
-                sessionStore.saveGameState(null)
-            }
-
-            _isSessionRestored.value = true
         }
 
         viewModelScope.launch {
@@ -216,7 +224,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             GameRules.wouldEnterHomePath(
                 piece,
                 diceValue,
-                state.currentPlayer.color,
+                piece.color,
                 state.players,
                 state.mode
             )
@@ -399,6 +407,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _canRedo.value = redoStack.isNotEmpty()
     }
 
+    private suspend fun clearSavedGameSnapshotSafely() {
+        runCatching { sessionStore.saveGameState(null) }
+    }
+
 }
 
 internal fun singleMoveAssistPieceCandidate(
@@ -411,6 +423,13 @@ internal fun singleMoveAssistPieceCandidate(
     return state.movablePieces.singleOrNull()
 }
 
+internal fun isRestorableGameStateSafely(
+    state: GameState,
+    validator: (GameState) -> Boolean = ::isRestorableGameState
+): Boolean = runCatching {
+    validator(state)
+}.getOrDefault(false)
+
 internal fun isRestorableGameState(state: GameState): Boolean {
     if (state.players.size != PlayerColor.entries.size) return false
     if (state.currentPlayerIndex !in state.players.indices) return false
@@ -419,6 +438,8 @@ internal fun isRestorableGameState(state: GameState): Boolean {
     val playerIds = state.players.map { it.id }
     if (playerIds.distinct().size != state.players.size) return false
     if (state.diceByPlayer.keys != playerIds.toSet()) return false
+    if (state.hasEnteredBoardAtLeastOnce.keys != playerIds.toSet()) return false
+    if (state.sharedTeamDiceEnabled.any { it !in 0..1 }) return false
 
     val activePlayers = state.players.filter { it.isActive }
     if (state.mode == GameMode.TEAM) {
@@ -464,7 +485,13 @@ internal fun isRestorableGameState(state: GameState): Boolean {
         }
         TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
             val dice = diceSnapshot ?: return false
-            val legalMoves = GameRules.movablePieces(current, dice.value, state.players, state.mode)
+            val legalMoves = GameRules.movablePiecesForTurn(
+                currentPlayer = current,
+                diceValue = dice.value,
+                allPlayers = state.players,
+                mode = state.mode,
+                sharedTeamDiceEnabled = state.sharedTeamDiceEnabled
+            )
             if (legalMoves.isEmpty()) return false
             if (state.movablePieces.isEmpty()) return false
             val legalSet = legalMoves.toSet()

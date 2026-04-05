@@ -214,12 +214,14 @@ fun GameBoardScreen(
         previousDiceSignature = diceSignature
 
         if (gameState.eventLog.size > previousEventSize) {
+            var playedCaptureInBatch = false
             gameState.eventLog.subList(previousEventSize, gameState.eventLog.size).forEach { event ->
                 when (event) {
                     is GameEvent.PieceCaptured -> {
                         val shouldSequenceCaptureAudio = hasCaptureDuringAnimation && movingPieceStepCount > 1
-                        if (!shouldSequenceCaptureAudio) {
+                        if (!shouldSequenceCaptureAudio && !playedCaptureInBatch) {
                             feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
+                            playedCaptureInBatch = true
                         }
                         captureFxColor = playerColor(event.byColor, setup.playerColors)
                         captureFxTrigger += 1

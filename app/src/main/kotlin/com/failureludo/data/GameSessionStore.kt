@@ -163,6 +163,8 @@ class GameSessionStore(private val context: Context) {
             .put("turnPhase", state.turnPhase.name)
             .put("lastDice", state.lastDice?.let { diceToJson(it) } ?: JSONObject.NULL)
             .put("diceByPlayer", diceByPlayerToJson(state.diceByPlayer))
+            .put("enteredBoardAtLeastOnce", enteredBoardFlagsToJson(state.hasEnteredBoardAtLeastOnce))
+            .put("sharedTeamDiceEnabled", JSONArray(state.sharedTeamDiceEnabled.sorted()))
             .put("movablePieces", JSONArray(state.movablePieces.map { pieceToJson(it) }))
                 .put("winners", JSONArray((state.winners ?: emptyList()).map { it.value }))
             .put("eventLog", JSONArray(state.eventLog.map { eventToJson(it) }))
@@ -184,16 +186,27 @@ class GameSessionStore(private val context: Context) {
         else diceFromJson(json.getJSONObject("lastDice"))
 
         val diceByPlayer = diceByPlayerFromJson(json.getJSONObject("diceByPlayer"))
+        val enteredBoardAtLeastOnce = if (json.has("enteredBoardAtLeastOnce")) {
+            enteredBoardFlagsFromJson(json.getJSONObject("enteredBoardAtLeastOnce"))
+        } else {
+            PlayerColor.entries.associate { PlayerId(it.ordinal + 1) to false }
+        }
+        val sharedTeamDiceEnabled = if (json.has("sharedTeamDiceEnabled")) {
+            json.getJSONArray("sharedTeamDiceEnabled").toIntList().toSet()
+        } else {
+            emptySet()
+        }
         val rawMovablePieces = json.getJSONArray("movablePieces").toObjectList { obj -> pieceFromJson(obj) }
         val movablePieces = when {
             turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION &&
                 lastDice != null &&
                 currentPlayerIndex in players.indices -> {
-                GameRules.movablePieces(
-                    player = players[currentPlayerIndex],
+                GameRules.movablePiecesForTurn(
+                    currentPlayer = players[currentPlayerIndex],
                     diceValue = lastDice.value,
                     allPlayers = players,
-                    mode = mode
+                    mode = mode,
+                    sharedTeamDiceEnabled = sharedTeamDiceEnabled
                 )
             }
             turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION -> rawMovablePieces
@@ -211,6 +224,8 @@ class GameSessionStore(private val context: Context) {
             turnPhase = turnPhase,
             lastDice = lastDice,
             diceByPlayer = diceByPlayer,
+            hasEnteredBoardAtLeastOnce = enteredBoardAtLeastOnce,
+            sharedTeamDiceEnabled = sharedTeamDiceEnabled,
             movablePieces = movablePieces,
             winners = winners,
             eventLog = eventLog
@@ -321,6 +336,23 @@ class GameSessionStore(private val context: Context) {
         return (1..4).associate { idValue ->
             val key = idValue.toString()
             val value = if (!json.has(key) || json.isNull(key)) null else json.getInt(key)
+            PlayerId(idValue) to value
+        }
+    }
+
+    private fun enteredBoardFlagsToJson(flags: Map<PlayerId, Boolean>): JSONObject {
+        val obj = JSONObject()
+        (1..4).forEach { idValue ->
+            val id = PlayerId(idValue)
+            obj.put(idValue.toString(), flags[id] == true)
+        }
+        return obj
+    }
+
+    private fun enteredBoardFlagsFromJson(json: JSONObject): Map<PlayerId, Boolean> {
+        return (1..4).associate { idValue ->
+            val key = idValue.toString()
+            val value = if (!json.has(key)) false else json.optBoolean(key, false)
             PlayerId(idValue) to value
         }
     }
