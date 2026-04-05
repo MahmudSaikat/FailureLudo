@@ -13,7 +13,7 @@ android {
         applicationId = "com.failureludo"
         minSdk = 26
         targetSdk = 35
-6        versionCode = 6
+        versionCode = 6
         versionName = "1.0.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
