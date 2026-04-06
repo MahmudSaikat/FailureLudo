@@ -1,11 +1,24 @@
 package com.failureludo.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.failureludo.data.FeedbackSettings
 import com.failureludo.data.GamePreferencesStore
 import com.failureludo.data.GameSessionStore
+import com.failureludo.data.history.FlnDocument
+import com.failureludo.data.history.FlnGameStatus
+import com.failureludo.data.history.FlnMove
+import com.failureludo.data.history.FlnMoveRecorder
+import com.failureludo.data.history.FlnPlayer
+import com.failureludo.data.history.FlnReplayApplier
+import com.failureludo.data.history.FlnReplayResult
+import com.failureludo.data.history.GameHistoryImportResult
+import com.failureludo.data.history.GameHistoryRecord
+import com.failureludo.data.history.GameHistoryRepository
+import com.failureludo.data.history.GameHistoryStore
+import com.failureludo.data.history.LocalGameHistoryRepository
 import com.failureludo.engine.Board
 import com.failureludo.engine.GameEngine
 import com.failureludo.engine.GameMode
@@ -14,6 +27,7 @@ import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
 import com.failureludo.engine.PiecePosition
 import com.failureludo.engine.PlayerColor
+import com.failureludo.engine.PlayerId
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
 import kotlinx.coroutines.CancellationException
@@ -24,15 +38,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
         private const val UNDO_HISTORY_LIMIT = 12
+        private const val FLN_VERSION = "1.0"
+        private const val RULESET_VERSION = "2026.04"
+        private const val TURN_TRANSITION_PADDING_MS = 280L
+        private const val BOT_ROLL_DELAY_MS = 320L
     }
 
     private val sessionStore = GameSessionStore(application.applicationContext)
     private val preferencesStore = GamePreferencesStore(application.applicationContext)
+    private val historyRepository: GameHistoryRepository =
+        LocalGameHistoryRepository(GameHistoryStore(application.applicationContext))
 
     // ── Setup ─────────────────────────────────────────────────────────────────
 
@@ -44,6 +65,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isSessionRestored = MutableStateFlow(false)
     val isSessionRestored: StateFlow<Boolean> = _isSessionRestored.asStateFlow()
+
+    private val _historyRecords = MutableStateFlow<List<GameHistoryRecord>>(emptyList())
+    val historyRecords: StateFlow<List<GameHistoryRecord>> = _historyRecords.asStateFlow()
+
+    private val _replayUiState = MutableStateFlow(ReplayUiState())
+    val replayUiState: StateFlow<ReplayUiState> = _replayUiState.asStateFlow()
+
+    private var currentHistoryDocument: FlnDocument? = null
+    private var currentHistoryGameId: String? = null
+    private var skipNextHistoryPersistence: Boolean = false
+    private var replayBaseState: GameState? = null
+    private var replayMoves: List<FlnMove> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -70,6 +103,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 clearSavedGameSnapshotSafely()
             } finally {
                 _isSessionRestored.value = true
+                refreshHistoryRecordsInternal()
             }
         }
 
@@ -112,12 +146,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var botRollJob: Job? = null
     private var botSelectJob: Job? = null
     private var singleMoveAssistJob: Job? = null
+    private var turnTransitionReleaseJob: Job? = null
+    private var isBoardMovementAnimationActive: Boolean = false
+
+    private val _isTurnTransitionLocked = MutableStateFlow(false)
+    val isTurnTransitionLocked: StateFlow<Boolean> = _isTurnTransitionLocked.asStateFlow()
 
     private val _pendingHomeEntryChoicePiece = MutableStateFlow<Piece?>(null)
     val pendingHomeEntryChoicePiece: StateFlow<Piece?> = _pendingHomeEntryChoicePiece.asStateFlow()
 
     val hasActiveGame: Boolean
-        get() = _gameState.value?.let { !it.isGameOver } ?: false
+        get() = if (_replayUiState.value.isReplayMode) {
+            false
+        } else {
+            _gameState.value?.let { !it.isGameOver } ?: false
+        }
 
     /** Callback invoked by UI when game transitions to GAME_OVER. */
     var onGameOver: (() -> Unit)? = null
@@ -126,6 +169,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startGame() {
         clearPendingAutomationJobs()
+        resetTurnTransitionLock()
+        clearReplayModeInternal()
         clearHistory()
         _pendingHomeEntryChoicePiece.value = null
         val setup = _setupState.value
@@ -141,9 +186,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             playerNames  = setup.playerNames,
             mode         = setup.mode
         )
+
+        val createdAt = System.currentTimeMillis()
+        val document = createInitialHistoryDocument(
+            setup = setup,
+            state = newState,
+            createdAtEpochMs = createdAt,
+            gameId = UUID.randomUUID().toString()
+        )
+        currentHistoryGameId = document.gameId
+        currentHistoryDocument = document
+        skipNextHistoryPersistence = true
+
         setGameState(newState)
         viewModelScope.launch {
             sessionStore.saveSetupState(setup)
+            historyRepository.upsertPlayable(document)
+            refreshHistoryRecordsInternal()
         }
         checkForBotTurn()
     }
@@ -153,10 +212,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun undoLastAction() {
+        if (isReplayModeActive()) return
         val currentState = _gameState.value ?: return
         val previousState = undoStack.removeLastOrNull() ?: return
 
         clearPendingAutomationJobs()
+        resetTurnTransitionLock()
         redoStack.addLast(currentState)
         updateHistoryFlags()
         setGameState(previousState, recordHistory = false, clearRedo = false)
@@ -164,6 +225,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun redoLastAction() {
+        if (isReplayModeActive()) return
         val nextState = redoStack.removeLastOrNull() ?: return
 
         val currentState = _gameState.value
@@ -173,12 +235,30 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         clearPendingAutomationJobs()
+        resetTurnTransitionLock()
         updateHistoryFlags()
         setGameState(nextState, recordHistory = false, clearRedo = false)
         checkForBotTurn()
     }
 
+    fun updateMovementAnimationState(isActive: Boolean) {
+        if (isBoardMovementAnimationActive == isActive) return
+        isBoardMovementAnimationActive = isActive
+
+        if (isActive) {
+            turnTransitionReleaseJob?.cancel()
+            turnTransitionReleaseJob = null
+            return
+        }
+
+        if (_isTurnTransitionLocked.value) {
+            scheduleTurnTransitionUnlock()
+        }
+    }
+
     fun rollDice() {
+        if (isReplayModeActive()) return
+        if (_isTurnTransitionLocked.value) return
         clearPendingAutomationJobs()
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_ROLL) return
@@ -203,6 +283,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectPiece(piece: Piece) {
+        if (isReplayModeActive()) return
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
 
@@ -238,16 +319,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resolveHomeEntryChoice(enterHomePath: Boolean) {
+        if (isReplayModeActive()) return
         val piece = _pendingHomeEntryChoicePiece.value ?: return
         _pendingHomeEntryChoicePiece.value = null
         applyPieceSelection(piece, deferHomeEntry = !enterHomePath)
     }
 
     fun dismissHomeEntryChoice() {
+        if (isReplayModeActive()) return
         _pendingHomeEntryChoicePiece.value = null
     }
 
     fun quickMoveSinglePiece() {
+        if (isReplayModeActive()) return
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
         if (state.currentPlayer.type != PlayerType.HUMAN) return
@@ -256,9 +340,121 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         selectPiece(singlePiece)
     }
 
+    fun refreshHistoryRecords() {
+        viewModelScope.launch {
+            refreshHistoryRecordsInternal()
+        }
+    }
+
+    fun deleteHistoryRecord(gameId: String) {
+        viewModelScope.launch {
+            historyRepository.delete(gameId)
+            if (currentHistoryGameId == gameId) {
+                currentHistoryGameId = null
+                currentHistoryDocument = null
+                clearReplayModeInternal()
+            }
+            refreshHistoryRecordsInternal()
+        }
+    }
+
+    fun exportHistoryRecord(gameId: String, onResult: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            val exported = historyRepository.exportPlayableFln(gameId)
+            onResult(exported)
+        }
+    }
+
+    fun exportHistoryRecordToUri(gameId: String, uri: Uri, onResult: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val exported = historyRepository.exportPlayableFln(gameId)
+            val success = if (exported == null) {
+                false
+            } else {
+                writeTextToUri(uri, exported)
+            }
+            onResult(success)
+        }
+    }
+
+    fun importFlnText(text: String, onResult: (GameHistoryImportResult) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = historyRepository.importFln(text)
+            refreshHistoryRecordsInternal()
+            onResult(result)
+        }
+    }
+
+    fun importFlnFromUri(uri: Uri, onResult: (GameHistoryImportResult) -> Unit = {}) {
+        viewModelScope.launch {
+            val text = readTextFromUri(uri)
+            if (text.isNullOrBlank()) {
+                onResult(GameHistoryImportResult.Invalid("Selected file was empty or unreadable."))
+                return@launch
+            }
+
+            val result = historyRepository.importFln(text)
+            refreshHistoryRecordsInternal()
+            onResult(result)
+        }
+    }
+
+    fun openHistoryRecord(gameId: String, onResult: (Boolean) -> Unit = {}) {
+        openHistoryRecordInternal(
+            gameId = gameId,
+            mode = HistoryOpenMode.RESUME,
+            onResult = onResult
+        )
+    }
+
+    fun openHistoryRecordForReplay(gameId: String, onResult: (Boolean) -> Unit = {}) {
+        openHistoryRecordInternal(
+            gameId = gameId,
+            mode = HistoryOpenMode.REPLAY,
+            onResult = onResult
+        )
+    }
+
+    fun replayStepBackward() {
+        val replay = _replayUiState.value
+        if (!replay.isReplayMode) return
+        if (replay.currentPly <= 0) return
+        applyReplayCursor(replay.currentPly - 1)
+    }
+
+    fun replayStepForward() {
+        val replay = _replayUiState.value
+        if (!replay.isReplayMode) return
+        if (replay.currentPly >= replay.totalPly) return
+        applyReplayCursor(replay.currentPly + 1)
+    }
+
+    fun replayJumpToStart() {
+        val replay = _replayUiState.value
+        if (!replay.isReplayMode) return
+        applyReplayCursor(0)
+    }
+
+    fun replayJumpToEnd() {
+        val replay = _replayUiState.value
+        if (!replay.isReplayMode) return
+        applyReplayCursor(replay.totalPly)
+    }
+
+    fun replayJumpToPly(targetPly: Int) {
+        val replay = _replayUiState.value
+        if (!replay.isReplayMode) return
+        applyReplayCursor(targetPly)
+    }
+
+    fun exitReplayMode() {
+        clearReplayModeInternal()
+    }
+
     // ── Private ───────────────────────────────────────────────────────────────
 
     private fun applyPieceSelection(piece: Piece, deferHomeEntry: Boolean) {
+        if (isReplayModeActive()) return
         clearPendingAutomationJobs()
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
@@ -272,11 +468,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (newState.moveCounter > state.moveCounter) {
+            beginTurnTransitionLock()
+        }
+
         // If turn changed to a bot, trigger bot's dice roll
         checkForBotTurn()
     }
 
     private fun handleNoMoves() {
+        if (isReplayModeActive()) return
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.NO_MOVES_AVAILABLE) return
 
@@ -325,19 +526,53 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         updateHistoryFlags()
         viewModelScope.launch {
             sessionStore.saveGameState(newState)
+            if (recordHistory) {
+                persistHistoryTransition(
+                    previousState = currentState,
+                    newState = newState
+                )
+            }
         }
     }
 
     private fun checkForBotTurn() {
+        if (isReplayModeActive()) return
+        if (_isTurnTransitionLocked.value) return
         val state = _gameState.value ?: return
         if (state.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
             state.currentPlayer.type == PlayerType.BOT
         ) {
             botRollJob = viewModelScope.launch {
-                delay(800)
+                delay(BOT_ROLL_DELAY_MS)
                 botRollDice()
             }
         }
+    }
+
+    private fun beginTurnTransitionLock() {
+        _isTurnTransitionLocked.value = true
+        turnTransitionReleaseJob?.cancel()
+        turnTransitionReleaseJob = null
+        if (!isBoardMovementAnimationActive) {
+            scheduleTurnTransitionUnlock()
+        }
+    }
+
+    private fun scheduleTurnTransitionUnlock() {
+        turnTransitionReleaseJob?.cancel()
+        turnTransitionReleaseJob = viewModelScope.launch {
+            delay(TURN_TRANSITION_PADDING_MS)
+            if (!_isTurnTransitionLocked.value) return@launch
+            if (isBoardMovementAnimationActive) return@launch
+            _isTurnTransitionLocked.value = false
+            checkForBotTurn()
+        }
+    }
+
+    private fun resetTurnTransitionLock() {
+        _isTurnTransitionLocked.value = false
+        turnTransitionReleaseJob?.cancel()
+        turnTransitionReleaseJob = null
     }
 
     private fun botRollDice() {
@@ -407,10 +642,303 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _canRedo.value = redoStack.isNotEmpty()
     }
 
+    private suspend fun refreshHistoryRecordsInternal() {
+        val records = historyRepository.listRecords()
+            .sortedByDescending { it.updatedAtEpochMs }
+        _historyRecords.value = records
+    }
+
+    private fun openHistoryRecordInternal(
+        gameId: String,
+        mode: HistoryOpenMode,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            val record = historyRepository.findRecord(gameId)
+            val document = record?.playableDocument
+            if (document == null) {
+                onResult(false)
+                return@launch
+            }
+
+            val restoredSetup = setupStateFromDocument(document)
+            val initialState = initialStateFromSetup(restoredSetup)
+            val restoredState = when (mode) {
+                HistoryOpenMode.RESUME -> restoreStateFromDocument(document, restoredSetup)
+                HistoryOpenMode.REPLAY -> initialState
+            }
+
+            if (restoredState == null) {
+                onResult(false)
+                return@launch
+            }
+
+            clearPendingAutomationJobs()
+            resetTurnTransitionLock()
+            clearHistory()
+            _pendingHomeEntryChoicePiece.value = null
+            _setupState.value = restoredSetup
+
+            currentHistoryGameId = document.gameId
+            currentHistoryDocument = document
+            skipNextHistoryPersistence = true
+
+            if (mode == HistoryOpenMode.REPLAY) {
+                replayBaseState = initialState
+                replayMoves = document.moves
+                updateReplayUiState(
+                    gameId = document.gameId,
+                    currentPly = 0,
+                    totalPly = replayMoves.size
+                )
+            } else {
+                clearReplayModeInternal()
+            }
+
+            setGameState(
+                restoredState,
+                recordHistory = false,
+                clearRedo = true
+            )
+            sessionStore.saveSetupState(restoredSetup)
+            if (mode == HistoryOpenMode.RESUME) {
+                checkForBotTurn()
+            }
+            onResult(true)
+        }
+    }
+
+    private fun createInitialHistoryDocument(
+        setup: SetupState,
+        state: GameState,
+        createdAtEpochMs: Long,
+        gameId: String
+    ): FlnDocument {
+        val activePlayers = state.players.filter { it.isActive }
+        val tags = mutableMapOf<String, String>()
+        tags["Mode"] = setup.mode.name
+        tags["ActivePlayerIds"] = activePlayers.joinToString(",") { it.id.value.toString() }
+        state.players.forEach { player ->
+            tags["PlayerType.${player.id.value}"] = player.type.name
+        }
+
+        return FlnDocument(
+            flnVersion = FLN_VERSION,
+            rulesetVersion = RULESET_VERSION,
+            gameId = gameId,
+            status = FlnGameStatus.ACTIVE,
+            createdAtEpochMs = createdAtEpochMs,
+            updatedAtEpochMs = createdAtEpochMs,
+            players = activePlayers.map { player ->
+                FlnPlayer(id = player.id, name = player.name)
+            },
+            moves = emptyList(),
+            tags = tags
+        )
+    }
+
+    private suspend fun persistHistoryTransition(previousState: GameState?, newState: GameState?) {
+        if (skipNextHistoryPersistence) {
+            skipNextHistoryPersistence = false
+            return
+        }
+
+        val currentDocument = currentHistoryDocument ?: return
+        if (previousState == null || newState == null || previousState == newState) return
+
+        val nextPly = currentDocument.moves.size + 1
+        val derivedMove = FlnMoveRecorder.deriveMove(
+            before = previousState,
+            after = newState,
+            ply = nextPly
+        )
+
+        val updatedStatus = if (newState.isGameOver) FlnGameStatus.FINISHED else FlnGameStatus.ACTIVE
+        val updatedAt = System.currentTimeMillis()
+
+        val nextDocument = when {
+            derivedMove != null -> currentDocument.copy(
+                moves = currentDocument.moves + derivedMove,
+                status = updatedStatus,
+                updatedAtEpochMs = updatedAt
+            )
+
+            currentDocument.status != updatedStatus -> currentDocument.copy(
+                status = updatedStatus,
+                updatedAtEpochMs = updatedAt
+            )
+
+            else -> currentDocument
+        }
+
+        if (nextDocument != currentDocument) {
+            currentHistoryDocument = nextDocument
+            currentHistoryGameId = nextDocument.gameId
+            historyRepository.upsertPlayable(nextDocument)
+            refreshHistoryRecordsInternal()
+        }
+    }
+
+    private fun setupStateFromDocument(document: FlnDocument): SetupState {
+        val currentSetup = _setupState.value
+        val defaultNames = defaultPlayerNames().toMutableMap()
+        val activeColors = mutableListOf<PlayerColor>()
+
+        document.players.forEach { player ->
+            val color = playerColorFromId(player.id) ?: return@forEach
+            activeColors += color
+            defaultNames[color] = player.name
+        }
+
+        val mode = document.tags["Mode"]
+            ?.let { runCatching { GameMode.valueOf(it) }.getOrNull() }
+            ?: GameMode.FREE_FOR_ALL
+
+        val playerTypes = PlayerColor.entries.associateWith { color ->
+            val id = PlayerId(color.ordinal + 1)
+            val tagKey = "PlayerType.${id.value}"
+            document.tags[tagKey]
+                ?.let { raw -> runCatching { PlayerType.valueOf(raw) }.getOrNull() }
+                ?: PlayerType.HUMAN
+        }
+
+        val normalizedActiveColors = when {
+            mode == GameMode.TEAM -> PlayerColor.entries
+            activeColors.isEmpty() -> currentSetup.activeColors
+            else -> activeColors.distinct()
+        }
+
+        return SetupState(
+            activeColors = normalizedActiveColors,
+            playerTypes = playerTypes,
+            playerNames = defaultNames,
+            playerColors = currentSetup.playerColors,
+            mode = mode
+        )
+    }
+
+    private fun restoreStateFromDocument(document: FlnDocument, setup: SetupState): GameState? {
+        val initial = initialStateFromSetup(setup)
+
+        return when (val replay = FlnReplayApplier.replayMoves(initial, document.moves)) {
+            is FlnReplayResult.Success -> replay.finalState
+            is FlnReplayResult.Failure -> null
+        }
+    }
+
+    private fun initialStateFromSetup(setup: SetupState): GameState {
+        val activeColors = if (setup.mode == GameMode.TEAM) {
+            PlayerColor.entries
+        } else {
+            setup.activeColors
+        }
+
+        return GameEngine.newGame(
+            activeColors = activeColors,
+            playerTypes = setup.playerTypes,
+            playerNames = setup.playerNames,
+            mode = setup.mode
+        )
+    }
+
+    private fun applyReplayCursor(targetPly: Int) {
+        val replay = _replayUiState.value
+        if (!replay.isReplayMode) return
+
+        val baseState = replayBaseState ?: return
+        val boundedTarget = targetPly.coerceIn(0, replayMoves.size)
+
+        val replayedState = if (boundedTarget == 0) {
+            baseState
+        } else {
+            when (val replayResult = FlnReplayApplier.replayMoves(baseState, replayMoves.take(boundedTarget))) {
+                is FlnReplayResult.Success -> replayResult.finalState
+                is FlnReplayResult.Failure -> return
+            }
+        }
+
+        setGameState(
+            replayedState,
+            recordHistory = false,
+            clearRedo = true
+        )
+
+        updateReplayUiState(
+            gameId = replay.gameId,
+            currentPly = boundedTarget,
+            totalPly = replayMoves.size
+        )
+    }
+
+    private fun updateReplayUiState(gameId: String?, currentPly: Int, totalPly: Int) {
+        val boundedTotal = totalPly.coerceAtLeast(0)
+        val boundedCurrent = currentPly.coerceIn(0, boundedTotal)
+        _replayUiState.value = ReplayUiState(
+            isReplayMode = true,
+            gameId = gameId,
+            currentPly = boundedCurrent,
+            totalPly = boundedTotal
+        )
+    }
+
+    private fun clearReplayModeInternal() {
+        replayBaseState = null
+        replayMoves = emptyList()
+        _replayUiState.value = ReplayUiState()
+    }
+
+    private fun isReplayModeActive(): Boolean = _replayUiState.value.isReplayMode
+
+    private fun readTextFromUri(uri: Uri): String? {
+        val resolver = getApplication<Application>().contentResolver
+        return runCatching {
+            resolver.openInputStream(uri)
+                ?.bufferedReader(Charsets.UTF_8)
+                ?.use { it.readText() }
+        }.getOrNull()
+    }
+
+    private fun writeTextToUri(uri: Uri, text: String): Boolean {
+        val resolver = getApplication<Application>().contentResolver
+        return runCatching {
+            resolver.openOutputStream(uri)
+                ?.bufferedWriter(Charsets.UTF_8)
+                ?.use { it.write(text) } != null
+        }.getOrDefault(false)
+    }
+
+    private fun playerColorFromId(playerId: PlayerId): PlayerColor? {
+        return PlayerColor.entries.firstOrNull { color -> color.ordinal + 1 == playerId.value }
+    }
+
     private suspend fun clearSavedGameSnapshotSafely() {
         runCatching { sessionStore.saveGameState(null) }
     }
 
+    private enum class HistoryOpenMode {
+        RESUME,
+        REPLAY
+    }
+
+    override fun onCleared() {
+        clearPendingAutomationJobs()
+        resetTurnTransitionLock()
+        super.onCleared()
+    }
+
+}
+
+data class ReplayUiState(
+    val isReplayMode: Boolean = false,
+    val gameId: String? = null,
+    val currentPly: Int = 0,
+    val totalPly: Int = 0
+) {
+    val canStepBackward: Boolean
+        get() = isReplayMode && currentPly > 0
+
+    val canStepForward: Boolean
+        get() = isReplayMode && currentPly < totalPly
 }
 
 internal fun singleMoveAssistPieceCandidate(

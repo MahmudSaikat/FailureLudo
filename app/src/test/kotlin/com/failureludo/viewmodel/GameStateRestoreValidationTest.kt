@@ -82,4 +82,17 @@ class GameStateRestoreValidationTest {
 
         assertFalse(isRestorableGameState(broken))
     }
+
+    @Test
+    fun safeValidationReturnsFalseWhenValidatorThrows() {
+        val state = GameEngine.newGame(
+            activeColors = listOf(PlayerColor.RED, PlayerColor.BLUE)
+        )
+
+        val result = isRestorableGameStateSafely(state) {
+            throw IllegalStateException("boom")
+        }
+
+        assertFalse(result)
+    }
 }

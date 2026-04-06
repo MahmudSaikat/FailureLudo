@@ -64,6 +64,66 @@ object GameEngine {
     // ── Turn Actions ─────────────────────────────────────────────────────────
 
     /**
+     * Applies a full deterministic turn for replay/import use-cases.
+     *
+     * This helper enforces actor ownership, injects a known dice value, and then
+     * applies the chosen piece movement in one operation.
+     */
+    fun applyDeterministicTurn(state: GameState, input: DeterministicTurnInput): GameState {
+        require(state.turnPhase == TurnPhase.WAITING_FOR_ROLL) {
+            "applyDeterministicTurn called in wrong phase: ${state.turnPhase}"
+        }
+        require(state.currentPlayer.id == input.actorId) {
+            "Actor ${input.actorId.value} is not the current player ${state.currentPlayer.id.value}."
+        }
+
+        val rolled = rollDice(state, input.diceValue)
+        require(rolled.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION) {
+            "Deterministic move requires a selectable piece, but phase is ${rolled.turnPhase}."
+        }
+
+        val movingPlayer = requireNotNull(rolled.players.firstOrNull { it.id == input.movingPlayerId }) {
+            "Moving player ${input.movingPlayerId.value} not found."
+        }
+        val selectedPiece = requireNotNull(
+            rolled.movablePieces.firstOrNull { piece ->
+                piece.color == movingPlayer.color && piece.id == input.pieceId
+            }
+        ) {
+            "Piece ${input.pieceId} for player ${input.movingPlayerId.value} is not movable."
+        }
+
+        return selectPiece(rolled, selectedPiece, input.deferHomeEntry)
+    }
+
+    /**
+     * Applies a deterministic roll that should not produce a piece selection.
+     *
+     * Used for replay entries where a player rolled but had no legal move, or
+     * forfeited via three consecutive sixes.
+     */
+    fun applyDeterministicRollOnly(state: GameState, actorId: PlayerId, diceValue: Int): GameState {
+        require(state.turnPhase == TurnPhase.WAITING_FOR_ROLL) {
+            "applyDeterministicRollOnly called in wrong phase: ${state.turnPhase}"
+        }
+        require(state.currentPlayer.id == actorId) {
+            "Actor ${actorId.value} is not the current player ${state.currentPlayer.id.value}."
+        }
+
+        val rolled = rollDice(state, diceValue)
+        return when (rolled.turnPhase) {
+            TurnPhase.NO_MOVES_AVAILABLE -> advanceNoMoves(rolled)
+            TurnPhase.WAITING_FOR_ROLL -> rolled // consecutive-sixes forfeit already advanced turn
+            TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
+                throw IllegalArgumentException(
+                    "Deterministic roll-only is invalid because movable pieces exist."
+                )
+            }
+            TurnPhase.GAME_OVER -> rolled
+        }
+    }
+
+    /**
      * Rolls the dice for the current player.
      * Updates [TurnPhase] to WAITING_FOR_PIECE_SELECTION or NO_MOVES_AVAILABLE.
      */
@@ -72,7 +132,24 @@ object GameEngine {
             "rollDice called in wrong phase: ${state.turnPhase}"
         }
 
-        val diceValue = dice.roll()
+        return rollDiceWithValue(state, dice.roll())
+    }
+
+    /**
+     * Rolls with a forced dice value for deterministic replay/import paths.
+     */
+    fun rollDice(state: GameState, forcedDiceValue: Int): GameState {
+        require(state.turnPhase == TurnPhase.WAITING_FOR_ROLL) {
+            "rollDice called in wrong phase: ${state.turnPhase}"
+        }
+        require(forcedDiceValue in 1..6) {
+            "Forced dice value must be 1..6, got $forcedDiceValue."
+        }
+
+        return rollDiceWithValue(state, forcedDiceValue)
+    }
+
+    private fun rollDiceWithValue(state: GameState, diceValue: Int): GameState {
         val rollCount = (state.lastDice?.rollCount?.takeIf { diceValue == 6 && it < 3 } ?: 0) + 1
 
         // Three consecutive 6s → forfeit turn

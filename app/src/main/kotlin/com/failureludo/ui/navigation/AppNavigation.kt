@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.failureludo.ui.screens.GameBoardScreen
 import com.failureludo.ui.screens.GameSetupScreen
+import com.failureludo.ui.screens.HistoryScreen
 import com.failureludo.ui.screens.HomeScreen
 import com.failureludo.ui.screens.WinScreen
 import com.failureludo.viewmodel.GameViewModel
@@ -17,10 +18,11 @@ import com.failureludo.viewmodel.GameViewModel
 fun AppNavigation(navController: NavHostController) {
     // Single shared ViewModel scoped to the nav graph
     val gameViewModel: GameViewModel = viewModel()
-    val gameState by gameViewModel.gameState.collectAsState()
     val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
+    val historyRecords by gameViewModel.historyRecords.collectAsState()
 
-    val hasActiveGame = gameState?.let { !it.isGameOver } ?: false
+    val hasActiveGame = gameViewModel.hasActiveGame
+    val hasHistoryRecords = historyRecords.isNotEmpty()
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
 
@@ -28,8 +30,22 @@ fun AppNavigation(navController: NavHostController) {
             HomeScreen(
                 onNewGame   = { navController.navigate(Screen.Setup.route) },
                 onResume    = { navController.navigate(Screen.Game.route) },
+                onHistory   = { navController.navigate(Screen.History.route) },
                 hasActiveGame = hasActiveGame,
+                hasHistoryRecords = hasHistoryRecords,
                 isSessionRestored = isSessionRestored
+            )
+        }
+
+        composable(Screen.History.route) {
+            HistoryScreen(
+                viewModel = gameViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenGame = {
+                    navController.navigate(Screen.Game.route) {
+                        popUpTo(Screen.History.route)
+                    }
+                }
             )
         }
 

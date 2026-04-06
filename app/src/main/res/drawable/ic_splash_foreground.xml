@@ -3,5 +3,5 @@
     android:inset="30dp">
     <bitmap
         android:src="@drawable/ic_launcher_foreground_new"
-        android:gravity="center" />
+        android:gravity="fill" />
 </inset>

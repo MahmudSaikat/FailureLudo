@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,15 +22,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.failureludo.R
 import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
@@ -40,8 +47,10 @@ import com.failureludo.ui.components.LudoBoardCanvas
 import com.failureludo.ui.components.TappedCellPieces
 import com.failureludo.ui.theme.*
 import com.failureludo.viewmodel.GameViewModel
+import com.failureludo.viewmodel.ReplayUiState
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal data class BoardLayoutSizing(
@@ -53,6 +62,8 @@ internal data class BoardLayoutSizing(
 private const val PIECE_MOVE_STEP_DELAY_MS = 130L
 private const val PIECE_MOVE_SETTLE_DELAY_MS = 120L
 private const val CAPTURE_RETURN_ACCELERATION_THRESHOLD = 8
+private const val PLAY_AREA_BACKGROUND_IMAGE_ALPHA = 0.34f
+private const val PLAY_AREA_BACKGROUND_OVERLAY_ALPHA = 0.10f
 
 private data class PieceAnimationPlan(
     val paths: List<Pair<Pair<PlayerColor, Int>, List<Pair<Int, Int>>>> = emptyList(),
@@ -97,6 +108,10 @@ fun GameBoardScreen(
     val setup by viewModel.setupState.collectAsState()
     val feedbackSettings by viewModel.feedbackSettings.collectAsState()
     val pendingHomeEntryChoicePiece by viewModel.pendingHomeEntryChoicePiece.collectAsState()
+    val canUndo by viewModel.canUndo.collectAsState()
+    val canRedo by viewModel.canRedo.collectAsState()
+    val replayUiState by viewModel.replayUiState.collectAsState()
+    val isTurnTransitionLocked by viewModel.isTurnTransitionLocked.collectAsState()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val feedbackManager = remember(context) { GameFeedbackManager(context) }
@@ -132,9 +147,21 @@ fun GameBoardScreen(
     var captureFxColor by remember { mutableStateOf(Color.White) }
     var finishFxTrigger by remember { mutableIntStateOf(0) }
     var finishFxColor by remember { mutableStateOf(Color.White) }
+    var replayAutoplayEnabled by remember { mutableStateOf(false) }
+    var replaySpeedIndex by remember { mutableIntStateOf(0) }
     val animatedPieceCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
     var previousPiecePositions by remember { mutableStateOf<Map<Pair<PlayerColor, Int>, PiecePosition>?>(null) }
     var previousMoveCounter by remember { mutableLongStateOf(-1L) }
+
+    val replaySpeedSettings = remember {
+        listOf(
+            1_100L to "1x",
+            760L to "1.5x",
+            430L to "2.5x"
+        )
+    }
+    val replayDelayMs = replaySpeedSettings[replaySpeedIndex].first
+    val replaySpeedLabel = replaySpeedSettings[replaySpeedIndex].second
 
     val precomputedAnimationPlan = remember(
         gameState.players,
@@ -153,6 +180,7 @@ fun GameBoardScreen(
     val movingPieceStepCount = precomputedAnimationPlan.movingPieceStepCount
     val hasCaptureDuringAnimation = precomputedAnimationPlan.hasCapture
     val isMovementAnimationActive = precomputedAnimationPaths.isNotEmpty() || animatedPieceCells.isNotEmpty()
+    val isTurnInputBlocked = isMovementAnimationActive || isTurnTransitionLocked
 
     val firstFrameAnimationCells = remember(precomputedAnimationPaths) {
         precomputedAnimationPaths.associate { (key, cells) -> key to cells.first() }
@@ -266,13 +294,70 @@ fun GameBoardScreen(
         }
     }
 
+    LaunchedEffect(replayUiState.isReplayMode) {
+        if (!replayUiState.isReplayMode) {
+            replayAutoplayEnabled = false
+        }
+    }
+
+    LaunchedEffect(replayUiState.isReplayMode, isMovementAnimationActive) {
+        if (replayUiState.isReplayMode) {
+            viewModel.updateMovementAnimationState(isActive = false)
+        } else {
+            viewModel.updateMovementAnimationState(isActive = isMovementAnimationActive)
+        }
+    }
+
+    LaunchedEffect(
+        replayUiState.isReplayMode,
+        replayUiState.currentPly,
+        replayUiState.totalPly,
+        replayAutoplayEnabled,
+        isMovementAnimationActive,
+        replayDelayMs
+    ) {
+        if (!replayUiState.isReplayMode) return@LaunchedEffect
+        if (!replayAutoplayEnabled) return@LaunchedEffect
+
+        if (replayUiState.currentPly >= replayUiState.totalPly) {
+            replayAutoplayEnabled = false
+            return@LaunchedEffect
+        }
+
+        if (isMovementAnimationActive) return@LaunchedEffect
+
+        kotlinx.coroutines.delay(replayDelayMs)
+
+        if (replayAutoplayEnabled && !isMovementAnimationActive) {
+            viewModel.replayStepForward()
+        }
+    }
+
     if (showQuitDialog) {
         AlertDialog(
             onDismissRequest = { showQuitDialog = false },
-            title   = { Text("Quit Game?") },
-            text    = { Text("Your current game will be lost.") },
+            title   = { Text(if (replayUiState.isReplayMode) "Exit Replay?" else "Quit Game?") },
+            text    = {
+                Text(
+                    if (replayUiState.isReplayMode) {
+                        "Replay progress will be closed and you will return to home."
+                    } else {
+                        "Your current game will be lost."
+                    }
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { showQuitDialog = false; onQuit() }) { Text("Quit") }
+                TextButton(
+                    onClick = {
+                        showQuitDialog = false
+                        if (replayUiState.isReplayMode) {
+                            viewModel.exitReplayMode()
+                        }
+                        onQuit()
+                    }
+                ) {
+                    Text(if (replayUiState.isReplayMode) "Exit" else "Quit")
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showQuitDialog = false }) { Text("Cancel") }
@@ -307,27 +392,20 @@ fun GameBoardScreen(
                         title = "Enter Finish",
                         description = "Turn into home column and progress toward the center.",
                         tint = previewTint,
-                        enterHomePath = true
+                        enterHomePath = true,
+                        onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = true) }
                     )
 
                     HomeEntryOptionPreviewCard(
                         title = "Keep Circulating",
                         description = "Stay on the main track for another full round.",
                         tint = previewTint,
-                        enterHomePath = false
+                        enterHomePath = false,
+                        onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = false) }
                     )
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = true) }) {
-                    Text("Enter Finish")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = false) }) {
-                    Text("Keep Circulating")
-                }
-            }
+            confirmButton = {}
         )
     }
 
@@ -384,35 +462,100 @@ fun GameBoardScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Ludo") },
-                actions = {
-                    IconButton(onClick = { showFeedbackDialog = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Feedback Settings", tint = OnPrimary)
-                    }
-                    IconButton(onClick = { showQuitDialog = true }) {
-                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Quit", tint = OnPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Primary, titleContentColor = OnPrimary
-                )
-            )
-        },
-        containerColor = Background
-    ) { padding ->
-        Column(
+    Box(modifier = Modifier.fillMaxSize()) {
+        SplitEdgePlayBackground(
+            modifier = Modifier.fillMaxSize()
+        )
+
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+                .matchParentSize()
+                .background(Color.White.copy(alpha = PLAY_AREA_BACKGROUND_OVERLAY_ALPHA))
+        )
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            if (replayUiState.isReplayMode) {
+                                "Ludo Replay"
+                            } else {
+                                "Ludo"
+                            }
+                        )
+                    },
+                    actions = {
+                        IconButton(onClick = { showFeedbackDialog = true }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Feedback Settings", tint = OnPrimary)
+                        }
+                        IconButton(onClick = { showQuitDialog = true }) {
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Quit", tint = OnPrimary)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Primary, titleContentColor = OnPrimary
+                    )
+                )
+            },
+            containerColor = Color.Transparent
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
 
             TurnIndicatorRow(gameState, setup.playerColors)
+
+            if (replayUiState.isReplayMode) {
+                ReplayControlsRow(
+                    replayUiState = replayUiState,
+                    isMovementAnimationActive = isMovementAnimationActive,
+                    isAutoplayEnabled = replayAutoplayEnabled,
+                    replaySpeedLabel = replaySpeedLabel,
+                    onToggleAutoplay = {
+                        if (replayUiState.currentPly >= replayUiState.totalPly && !replayAutoplayEnabled) {
+                            replayAutoplayEnabled = false
+                        } else {
+                            replayAutoplayEnabled = !replayAutoplayEnabled
+                        }
+                    },
+                    onCycleSpeed = {
+                        replaySpeedIndex = (replaySpeedIndex + 1) % replaySpeedSettings.size
+                    },
+                    onJumpToStart = {
+                        replayAutoplayEnabled = false
+                        viewModel.replayJumpToStart()
+                    },
+                    onStepBackward = {
+                        replayAutoplayEnabled = false
+                        viewModel.replayStepBackward()
+                    },
+                    onStepForward = {
+                        replayAutoplayEnabled = false
+                        viewModel.replayStepForward()
+                    },
+                    onJumpToEnd = {
+                        replayAutoplayEnabled = false
+                        viewModel.replayJumpToEnd()
+                    },
+                    onScrubToPly = { targetPly ->
+                        replayAutoplayEnabled = false
+                        viewModel.replayJumpToPly(targetPly)
+                    }
+                )
+            } else {
+                MoveHistoryControlsRow(
+                    canUndo = canUndo && !isTurnInputBlocked,
+                    canRedo = canRedo && !isTurnInputBlocked,
+                    onUndo = viewModel::undoLastAction,
+                    onRedo = viewModel::redoLastAction
+                )
+            }
 
             val movableSet = gameState.movablePieces
                 .map { it.color to it.id }.toSet()
@@ -434,6 +577,11 @@ fun GameBoardScreen(
 
                 val playersByColor = gameState.players.associateBy { it.color }
 
+                OutsideBoardPlayBackground(
+                    boardSize = boardSize,
+                    modifier = Modifier.matchParentSize()
+                )
+
                 Column(
                     modifier = Modifier.height(boardSize + railHeight * 2),
                     verticalArrangement = Arrangement.SpaceBetween,
@@ -452,11 +600,12 @@ fun GameBoardScreen(
                                 diceValue = gameState.diceByPlayer[player.id],
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
+                                    !replayUiState.isReplayMode &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isMovementAnimationActive,
+                                    !isTurnInputBlocked,
                                 onRoll = {
-                                    if (!isMovementAnimationActive) {
+                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
                                         viewModel.rollDice()
                                     }
                                 },
@@ -469,11 +618,12 @@ fun GameBoardScreen(
                                 diceValue = gameState.diceByPlayer[player.id],
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
+                                    !replayUiState.isReplayMode &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isMovementAnimationActive,
+                                    !isTurnInputBlocked,
                                 onRoll = {
-                                    if (!isMovementAnimationActive) {
+                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
                                         viewModel.rollDice()
                                     }
                                 },
@@ -486,15 +636,13 @@ fun GameBoardScreen(
                         modifier = Modifier.size(boardSize),
                         contentAlignment = Alignment.Center
                     ) {
-                        BoardPlayBackdrop(modifier = Modifier.matchParentSize())
-
                         LudoBoardCanvas(
                             allPieces = piecesMap,
                             movablePieceIds = movableSet,
                             animatedPieceCells = renderedAnimatedCells,
                             playerPalette = setup.playerColors,
                             onCellPiecesTapped = { tapped ->
-                                if (renderedAnimatedCells.isEmpty()) {
+                                if (!replayUiState.isReplayMode && renderedAnimatedCells.isEmpty()) {
                                     val decision = resolveStackTapDecision(tapped)
                                     when {
                                         decision.autoPiece != null -> viewModel.selectPiece(decision.autoPiece)
@@ -538,11 +686,12 @@ fun GameBoardScreen(
                                 diceValue = gameState.diceByPlayer[player.id],
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
+                                    !replayUiState.isReplayMode &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isMovementAnimationActive,
+                                    !isTurnInputBlocked,
                                 onRoll = {
-                                    if (!isMovementAnimationActive) {
+                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
                                         viewModel.rollDice()
                                     }
                                 },
@@ -555,11 +704,12 @@ fun GameBoardScreen(
                                 diceValue = gameState.diceByPlayer[player.id],
                                 isCurrent = player.id == gameState.currentPlayer.id,
                                 isRollable = player.id == gameState.currentPlayer.id &&
+                                    !replayUiState.isReplayMode &&
                                     gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
                                     player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isMovementAnimationActive,
+                                    !isTurnInputBlocked,
                                 onRoll = {
-                                    if (!isMovementAnimationActive) {
+                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
                                         viewModel.rollDice()
                                     }
                                 },
@@ -568,6 +718,7 @@ fun GameBoardScreen(
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -752,12 +903,18 @@ private fun HomeEntryOptionPreviewCard(
     description: String,
     tint: Color,
     enterHomePath: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                role = Role.Button,
+                onClickLabel = title,
+                onClick = onClick
+            )
             .background(tint.copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -979,6 +1136,143 @@ private fun TurnIndicatorRow(state: GameState, playerColors: Map<PlayerColor, Co
 }
 
 @Composable
+private fun MoveHistoryControlsRow(
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedButton(
+            onClick = onUndo,
+            enabled = canUndo,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Undo")
+        }
+
+        OutlinedButton(
+            onClick = onRedo,
+            enabled = canRedo,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text("Redo")
+        }
+    }
+}
+
+@Composable
+private fun ReplayControlsRow(
+    replayUiState: ReplayUiState,
+    isMovementAnimationActive: Boolean,
+    isAutoplayEnabled: Boolean,
+    replaySpeedLabel: String,
+    onToggleAutoplay: () -> Unit,
+    onCycleSpeed: () -> Unit,
+    onJumpToStart: () -> Unit,
+    onStepBackward: () -> Unit,
+    onStepForward: () -> Unit,
+    onJumpToEnd: () -> Unit,
+    onScrubToPly: (Int) -> Unit
+) {
+    var scrubValue by remember(replayUiState.currentPly, replayUiState.totalPly) {
+        mutableFloatStateOf(replayUiState.currentPly.toFloat())
+    }
+
+    val controlsEnabled = !isMovementAnimationActive
+    val currentPly = replayUiState.currentPly
+    val totalPly = replayUiState.totalPly
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Replay move $currentPly / $totalPly",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    onClick = onCycleSpeed,
+                    enabled = controlsEnabled
+                ) {
+                    Text("Speed $replaySpeedLabel")
+                }
+
+                Button(
+                    onClick = onToggleAutoplay,
+                    enabled = controlsEnabled && (isAutoplayEnabled || replayUiState.canStepForward)
+                ) {
+                    Text(if (isAutoplayEnabled) "Pause" else "Play")
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(
+                onClick = onJumpToStart,
+                enabled = controlsEnabled && replayUiState.canStepBackward,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("|<")
+            }
+
+            OutlinedButton(
+                onClick = onStepBackward,
+                enabled = controlsEnabled && replayUiState.canStepBackward,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("<")
+            }
+
+            OutlinedButton(
+                onClick = onStepForward,
+                enabled = controlsEnabled && replayUiState.canStepForward,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(">")
+            }
+
+            OutlinedButton(
+                onClick = onJumpToEnd,
+                enabled = controlsEnabled && replayUiState.canStepForward,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(">|")
+            }
+        }
+
+        if (totalPly > 0) {
+            Slider(
+                value = scrubValue,
+                onValueChange = { scrubValue = it },
+                onValueChangeFinished = {
+                    onScrubToPly(scrubValue.roundToInt())
+                },
+                valueRange = 0f..totalPly.toFloat(),
+                enabled = controlsEnabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
 private fun PlayerChip(
     player: com.failureludo.engine.Player,
     isActive: Boolean,
@@ -1100,32 +1394,51 @@ private fun BoardSeatNamesOverlay(
 }
 
 @Composable
-private fun BoardPlayBackdrop(modifier: Modifier = Modifier) {
+private fun OutsideBoardPlayBackground(
+    boardSize: Dp,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        // Keep the square board zone clean so the board rendering is unchanged.
+        Box(
+            modifier = Modifier
+                .size(boardSize)
+                .align(Alignment.Center)
+                .background(Background)
+        )
+    }
+}
+
+@Composable
+private fun SplitEdgePlayBackground(
+    modifier: Modifier = Modifier
+) {
+    val backgroundImage = ImageBitmap.imageResource(id = R.drawable.ludo_board_background)
+
     Canvas(modifier = modifier) {
-        // Soft translucent base so board whites blend into the play surface.
-        drawRect(color = Color.White.copy(alpha = 0.42f))
+        val srcHalfHeight = (backgroundImage.height / 2).coerceAtLeast(1)
+        val srcSize = IntSize(backgroundImage.width, srcHalfHeight)
+        val dstWidth = size.width.roundToInt().coerceAtLeast(1)
+        val dstHalfHeight = (srcHalfHeight * (size.width / backgroundImage.width.toFloat()))
+            .roundToInt()
+            .coerceAtLeast(1)
 
-        val minDim = size.minDimension
-        val centerX = size.width / 2f
-        val centerY = size.height / 2f
-
-        drawCircle(
-            color = Secondary.copy(alpha = 0.10f),
-            radius = minDim * 0.52f,
-            center = Offset(centerX, centerY)
+        drawImage(
+            image = backgroundImage,
+            srcOffset = IntOffset(0, 0),
+            srcSize = srcSize,
+            dstOffset = IntOffset(0, 0),
+            dstSize = IntSize(dstWidth, dstHalfHeight),
+            alpha = PLAY_AREA_BACKGROUND_IMAGE_ALPHA
         )
 
-        drawCircle(
-            color = Primary.copy(alpha = 0.08f),
-            radius = minDim * 0.74f,
-            center = Offset(centerX + minDim * 0.12f, centerY - minDim * 0.10f)
-        )
-
-        drawCircle(
-            color = Primary.copy(alpha = 0.12f),
-            radius = minDim * 0.40f,
-            center = Offset(centerX, centerY),
-            style = Stroke(width = minDim * 0.018f)
+        drawImage(
+            image = backgroundImage,
+            srcOffset = IntOffset(0, backgroundImage.height - srcHalfHeight),
+            srcSize = srcSize,
+            dstOffset = IntOffset(0, (size.height - dstHalfHeight).roundToInt()),
+            dstSize = IntSize(dstWidth, dstHalfHeight),
+            alpha = PLAY_AREA_BACKGROUND_IMAGE_ALPHA
         )
     }
 }

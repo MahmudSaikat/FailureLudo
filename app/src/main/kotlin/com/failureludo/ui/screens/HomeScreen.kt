@@ -18,7 +18,9 @@ import com.failureludo.ui.theme.*
 fun HomeScreen(
     onNewGame: () -> Unit,
     onResume: () -> Unit,
+    onHistory: () -> Unit,
     hasActiveGame: Boolean,
+    hasHistoryRecords: Boolean,
     isSessionRestored: Boolean
 ) {
     Box(
@@ -102,6 +104,22 @@ fun HomeScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                     }
+
+                    if (hasHistoryRecords) {
+                        OutlinedButton(
+                            onClick = onHistory,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
+                        ) {
+                            Text(
+                                text = "Game History",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
                 } else {
                     Button(
                         onClick = onNewGame,
@@ -116,6 +134,22 @@ fun HomeScreen(
                             style = MaterialTheme.typography.titleMedium,
                             color = OnPrimary
                         )
+                    }
+
+                    if (hasHistoryRecords) {
+                        OutlinedButton(
+                            onClick = onHistory,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
+                        ) {
+                            Text(
+                                text = "Game History",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
                     }
                 }
             }
