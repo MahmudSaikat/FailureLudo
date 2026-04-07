@@ -10,6 +10,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextMeasurer
@@ -39,6 +40,26 @@ private const val PAWN_RADIUS_QUAD_MULTIPLIER = 0.29f
 private const val STACK_OFFSET_WIDE_MULTIPLIER = 0.22f
 private const val STACK_OFFSET_TRIAD_VERTICAL_MULTIPLIER = 0.17f
 private const val MAX_OVERFLOW_PER_AXIS_MULTIPLIER = 0.18f
+
+private val ENTRY_DIRECTIONS = mapOf(
+    PlayerColor.RED to (1f to 0f),
+    PlayerColor.BLUE to (0f to 1f),
+    PlayerColor.YELLOW to (-1f to 0f),
+    PlayerColor.GREEN to (0f to -1f)
+)
+
+private val MAIN_TRACK_INDEX_BY_CELL: Map<Pair<Int, Int>, Int> =
+    BoardCoordinates.MAIN_TRACK.withIndex().associate { it.value to it.index }
+
+private val HOME_YARD_CELL_TO_COLOR: Map<Pair<Int, Int>, PlayerColor> =
+    BoardCoordinates.HOME_YARD_SPOTS
+        .flatMap { (color, cells) -> cells.map { cell -> cell to color } }
+        .toMap()
+
+private val HOME_COLUMN_CELL_TO_COLOR: Map<Pair<Int, Int>, PlayerColor> =
+    BoardCoordinates.HOME_COLUMNS
+        .flatMap { (color, cells) -> cells.map { cell -> cell to color } }
+        .toMap()
 
 data class TappedCellPieces(
     val allPieces: List<Piece>,
@@ -273,17 +294,10 @@ private fun DrawScope.drawBoard(cellSize: Float, playerPalette: Map<PlayerColor,
 }
 
 private fun DrawScope.drawDirectionMarkers(cellSize: Float, playerPalette: Map<PlayerColor, Color>) {
-    val entryDirections = mapOf(
-        PlayerColor.RED to (1f to 0f),
-        PlayerColor.BLUE to (0f to 1f),
-        PlayerColor.YELLOW to (-1f to 0f),
-        PlayerColor.GREEN to (0f to -1f)
-    )
-
     PlayerColor.entries.forEach { color ->
         val entryIndex = color.entryPosition
         val entryCell = BoardCoordinates.MAIN_TRACK.getOrNull(entryIndex) ?: return@forEach
-        val entryDir = entryDirections[color] ?: (0f to 0f)
+        val entryDir = ENTRY_DIRECTIONS[color] ?: (0f to 0f)
 
         drawArrowOnCell(
             row = entryCell.first,
@@ -462,61 +476,63 @@ private fun DrawScope.drawAllPieces(
             val cy = layout.center.y
             val radius = layout.radius
             val outlineWidth = max(1.5f, cellSize * 0.05f)
+            val rotation = pawnRotationForCell(layout.cell)
+            rotate(degrees = rotation, pivot = Offset(cx, cy)) {
+                // Standardized selectable ring + glow
+                if (isMovable) {
+                    drawCircle(
+                        color  = Color.White.copy(alpha = 0.22f),
+                        radius = radius + cellSize * 0.22f,
+                        center = Offset(cx, cy)
+                    )
+                    drawCircle(
+                        color  = Color.White.copy(alpha = 0.95f),
+                        radius = radius + cellSize * 0.12f,
+                        center = Offset(cx, cy),
+                        style  = Stroke(width = cellSize * 0.05f)
+                    )
+                }
 
-            // Standardized selectable ring + glow
-            if (isMovable) {
+                // Pawn silhouette for small-size readability: base + head
                 drawCircle(
-                    color  = Color.White.copy(alpha = 0.22f),
-                    radius = radius + cellSize * 0.22f,
-                    center = Offset(cx, cy)
+                    color = Color.Black.copy(alpha = 0.16f),
+                    radius = radius * 0.78f,
+                    center = Offset(cx, cy + radius * 0.48f)
                 )
+
                 drawCircle(
-                    color  = Color.White.copy(alpha = 0.95f),
-                    radius = radius + cellSize * 0.12f,
-                    center = Offset(cx, cy),
-                    style  = Stroke(width = cellSize * 0.05f)
+                    color = playerColor(piece.color, playerPalette),
+                    radius = radius * 0.62f,
+                    center = Offset(cx, cy + radius * 0.22f)
+                )
+
+                drawCircle(
+                    color = playerColor(piece.color, playerPalette),
+                    radius = radius * 0.56f,
+                    center = Offset(cx, cy - radius * 0.38f)
+                )
+
+                drawCircle(
+                    color  = Color.Black.copy(alpha = 0.3f),
+                    radius = radius * 0.62f,
+                    center = Offset(cx, cy + radius * 0.22f),
+                    style  = Stroke(width = outlineWidth)
+                )
+
+                drawCircle(
+                    color  = Color.Black.copy(alpha = 0.3f),
+                    radius = radius * 0.56f,
+                    center = Offset(cx, cy - radius * 0.38f),
+                    style  = Stroke(width = outlineWidth)
+                )
+
+                // Head highlight
+                drawCircle(
+                    color  = Color.White.copy(alpha = 0.4f),
+                    radius = radius * 0.22f,
+                    center = Offset(cx - radius * 0.16f, cy - radius * 0.54f)
                 )
             }
-
-            // Pawn silhouette for small-size readability: base + head
-            drawCircle(
-                color = Color.Black.copy(alpha = 0.16f),
-                radius = radius * 0.78f,
-                center = Offset(cx, cy + radius * 0.48f)
-            )
-
-            drawCircle(
-                color = playerColor(piece.color, playerPalette),
-                radius = radius * 0.62f,
-                center = Offset(cx, cy + radius * 0.22f)
-            )
-
-            drawCircle(
-                color = playerColor(piece.color, playerPalette),
-                radius = radius * 0.56f,
-                center = Offset(cx, cy - radius * 0.38f)
-            )
-
-            drawCircle(
-                color  = Color.Black.copy(alpha = 0.3f),
-                radius = radius * 0.62f,
-                center = Offset(cx, cy + radius * 0.22f),
-                style  = Stroke(width = outlineWidth)
-            )
-
-            drawCircle(
-                color  = Color.Black.copy(alpha = 0.3f),
-                radius = radius * 0.56f,
-                center = Offset(cx, cy - radius * 0.38f),
-                style  = Stroke(width = outlineWidth)
-            )
-
-            // Head highlight
-            drawCircle(
-                color  = Color.White.copy(alpha = 0.4f),
-                radius = radius * 0.22f,
-                center = Offset(cx - radius * 0.16f, cy - radius * 0.54f)
-            )
         }
 
         if (stackCount > 1) {
@@ -697,5 +713,39 @@ private fun safeSquareColor(index: Int, playerPalette: Map<PlayerColor, Color>):
         26, 34 -> playerColor(PlayerColor.YELLOW, playerPalette)
         39, 47 -> playerColor(PlayerColor.GREEN, playerPalette)
         else -> Color.Gray
+    }
+}
+
+private fun pawnRotationForCell(cell: Pair<Int, Int>): Float {
+    val territory = territoryColorForCell(cell) ?: return 0f
+    val direction = ENTRY_DIRECTIONS[territory] ?: return 0f
+    return rotationForDirection(direction)
+}
+
+private fun rotationForDirection(direction: Pair<Float, Float>): Float {
+    return when (direction) {
+        0f to -1f -> 0f
+        1f to 0f -> 90f
+        0f to 1f -> 180f
+        -1f to 0f -> 270f
+        else -> 0f
+    }
+}
+
+private fun territoryColorForCell(cell: Pair<Int, Int>): PlayerColor? {
+    HOME_YARD_CELL_TO_COLOR[cell]?.let { return it }
+    HOME_COLUMN_CELL_TO_COLOR[cell]?.let { return it }
+    MAIN_TRACK_INDEX_BY_CELL[cell]?.let { index ->
+        return territoryColorForMainTrackIndex(index)
+    }
+    return null
+}
+
+private fun territoryColorForMainTrackIndex(index: Int): PlayerColor {
+    return when (index) {
+        in 0..12 -> PlayerColor.RED
+        in 13..25 -> PlayerColor.BLUE
+        in 26..38 -> PlayerColor.YELLOW
+        else -> PlayerColor.GREEN
     }
 }
