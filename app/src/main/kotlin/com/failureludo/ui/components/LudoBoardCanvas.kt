@@ -32,14 +32,14 @@ private const val MIN_EFFECTIVE_TOUCH_TARGET_DP = 48f
 private const val HIT_RADIUS_MULTIPLIER = 1.35f
 private const val MAX_EFFECTIVE_HIT_RADIUS_CELL_MULTIPLIER = 0.95f
 
-private const val PAWN_RADIUS_SINGLE_MULTIPLIER = 0.36f
-private const val PAWN_RADIUS_DOUBLE_MULTIPLIER = 0.33f
-private const val PAWN_RADIUS_TRIPLE_MULTIPLIER = 0.31f
-private const val PAWN_RADIUS_QUAD_MULTIPLIER = 0.29f
+private const val PAWN_RADIUS_SINGLE_MULTIPLIER = 0.44f
+private const val PAWN_RADIUS_DOUBLE_MULTIPLIER = 0.40f
+private const val PAWN_RADIUS_TRIPLE_MULTIPLIER = 0.38f
+private const val PAWN_RADIUS_QUAD_MULTIPLIER = 0.36f
 
-private const val STACK_OFFSET_WIDE_MULTIPLIER = 0.22f
-private const val STACK_OFFSET_TRIAD_VERTICAL_MULTIPLIER = 0.17f
-private const val MAX_OVERFLOW_PER_AXIS_MULTIPLIER = 0.18f
+private const val STACK_OFFSET_WIDE_MULTIPLIER = 0.26f
+private const val STACK_OFFSET_TRIAD_VERTICAL_MULTIPLIER = 0.20f
+private const val MAX_OVERFLOW_PER_AXIS_MULTIPLIER = 0.22f
 
 private val ENTRY_DIRECTIONS = mapOf(
     PlayerColor.RED to (1f to 0f),
@@ -187,6 +187,7 @@ fun LudoBoardCanvas(
     allPieces: Map<PlayerColor, List<Piece>>,
     movablePieceIds: Set<Pair<PlayerColor, Int>>,  // (color, pieceId) pairs that can move
     animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>> = emptyMap(),
+    movingPieceScale: Float = 1f,
     playerPalette: Map<PlayerColor, Color> = emptyMap(),
     onCellPiecesTapped: (TappedCellPieces) -> Unit,
     modifier: Modifier = Modifier
@@ -250,7 +251,15 @@ fun LudoBoardCanvas(
         drawHomeYards(cellSize, playerPalette)
         drawHomeColumns(cellSize, playerPalette)
         drawCenter(cellSize, playerPalette)
-        drawAllPieces(allPieces, movablePieceIds, animatedPieceCells, cellSize, textMeasurer, playerPalette)
+        drawAllPieces(
+            allPieces,
+            movablePieceIds,
+            animatedPieceCells,
+            movingPieceScale,
+            cellSize,
+            textMeasurer,
+            playerPalette
+        )
     }
 }
 
@@ -442,6 +451,7 @@ private fun DrawScope.drawAllPieces(
     allPieces: Map<PlayerColor, List<Piece>>,
     movable: Set<Pair<PlayerColor, Int>>,
     animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,
+    movingPieceScale: Float,
     cellSize: Float,
     textMeasurer: TextMeasurer,
     playerPalette: Map<PlayerColor, Color>
@@ -475,6 +485,8 @@ private fun DrawScope.drawAllPieces(
             val cx = layout.center.x
             val cy = layout.center.y
             val radius = layout.radius
+            val isAnimated = (piece.color to piece.id) in animatedPieceCells
+            val visualRadius = radius * if (isAnimated) movingPieceScale else 1f
             val outlineWidth = max(1.5f, cellSize * 0.05f)
             val rotation = pawnRotationForCell(layout.cell)
             rotate(degrees = rotation, pivot = Offset(cx, cy)) {
@@ -482,12 +494,12 @@ private fun DrawScope.drawAllPieces(
                 if (isMovable) {
                     drawCircle(
                         color  = Color.White.copy(alpha = 0.22f),
-                        radius = radius + cellSize * 0.22f,
+                        radius = visualRadius + cellSize * 0.22f,
                         center = Offset(cx, cy)
                     )
                     drawCircle(
                         color  = Color.White.copy(alpha = 0.95f),
-                        radius = radius + cellSize * 0.12f,
+                        radius = visualRadius + cellSize * 0.12f,
                         center = Offset(cx, cy),
                         style  = Stroke(width = cellSize * 0.05f)
                     )
@@ -496,41 +508,41 @@ private fun DrawScope.drawAllPieces(
                 // Pawn silhouette for small-size readability: base + head
                 drawCircle(
                     color = Color.Black.copy(alpha = 0.16f),
-                    radius = radius * 0.78f,
-                    center = Offset(cx, cy + radius * 0.48f)
+                    radius = visualRadius * 0.78f,
+                    center = Offset(cx, cy + visualRadius * 0.48f)
                 )
 
                 drawCircle(
                     color = playerColor(piece.color, playerPalette),
-                    radius = radius * 0.62f,
-                    center = Offset(cx, cy + radius * 0.22f)
+                    radius = visualRadius * 0.62f,
+                    center = Offset(cx, cy + visualRadius * 0.22f)
                 )
 
                 drawCircle(
                     color = playerColor(piece.color, playerPalette),
-                    radius = radius * 0.56f,
-                    center = Offset(cx, cy - radius * 0.38f)
+                    radius = visualRadius * 0.56f,
+                    center = Offset(cx, cy - visualRadius * 0.38f)
                 )
 
                 drawCircle(
                     color  = Color.Black.copy(alpha = 0.3f),
-                    radius = radius * 0.62f,
-                    center = Offset(cx, cy + radius * 0.22f),
+                    radius = visualRadius * 0.62f,
+                    center = Offset(cx, cy + visualRadius * 0.22f),
                     style  = Stroke(width = outlineWidth)
                 )
 
                 drawCircle(
                     color  = Color.Black.copy(alpha = 0.3f),
-                    radius = radius * 0.56f,
-                    center = Offset(cx, cy - radius * 0.38f),
+                    radius = visualRadius * 0.56f,
+                    center = Offset(cx, cy - visualRadius * 0.38f),
                     style  = Stroke(width = outlineWidth)
                 )
 
                 // Head highlight
                 drawCircle(
                     color  = Color.White.copy(alpha = 0.4f),
-                    radius = radius * 0.22f,
-                    center = Offset(cx - radius * 0.16f, cy - radius * 0.54f)
+                    radius = visualRadius * 0.22f,
+                    center = Offset(cx - visualRadius * 0.16f, cy - visualRadius * 0.54f)
                 )
             }
         }

@@ -1,6 +1,11 @@
 package com.failureludo.ui.screens
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -61,6 +66,9 @@ internal data class BoardLayoutSizing(
 
 private const val PIECE_MOVE_STEP_DELAY_MS = 130L
 private const val PIECE_MOVE_SETTLE_DELAY_MS = 120L
+private const val PIECE_MOVE_BREATH_PERIOD_MS = 240
+private const val PIECE_MOVE_BREATH_MIN_SCALE = 0.90f
+private const val PIECE_MOVE_BREATH_MAX_SCALE = 1.30f
 private const val CAPTURE_RETURN_ACCELERATION_THRESHOLD = 8
 private const val PLAY_AREA_BACKGROUND_IMAGE_ALPHA = 0.34f
 private const val PLAY_AREA_BACKGROUND_OVERLAY_ALPHA = 0.10f
@@ -180,6 +188,27 @@ fun GameBoardScreen(
     val movingPieceStepCount = precomputedAnimationPlan.movingPieceStepCount
     val hasCaptureDuringAnimation = precomputedAnimationPlan.hasCapture
     val isMovementAnimationActive = precomputedAnimationPaths.isNotEmpty() || animatedPieceCells.isNotEmpty()
+    val movementBreathTransition = rememberInfiniteTransition(label = "piece_move_breath")
+    val movementBreathPhase by movementBreathTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = PIECE_MOVE_BREATH_PERIOD_MS,
+                easing = LinearEasing
+            ),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "piece_move_breath_phase"
+    )
+    val movingPieceScale = if (isMovementAnimationActive) {
+        val sineInput = movementBreathPhase * (2f * PI.toFloat())
+        val normalizedWave = ((sin(sineInput.toDouble()) + 1.0) / 2.0).toFloat()
+        PIECE_MOVE_BREATH_MIN_SCALE +
+            ((PIECE_MOVE_BREATH_MAX_SCALE - PIECE_MOVE_BREATH_MIN_SCALE) * normalizedWave)
+    } else {
+        1f
+    }
     val isTurnInputBlocked = isMovementAnimationActive || isTurnTransitionLocked
 
     val firstFrameAnimationCells = remember(precomputedAnimationPaths) {
@@ -218,7 +247,9 @@ fun GameBoardScreen(
                         kotlinx.coroutines.delay(PIECE_MOVE_STEP_DELAY_MS)
                     }
                 }
-                kotlinx.coroutines.delay(PIECE_MOVE_SETTLE_DELAY_MS)
+                if (maxSteps > 0) {
+                    kotlinx.coroutines.delay(PIECE_MOVE_SETTLE_DELAY_MS)
+                }
                 animatedPieceCells.clear()
             }
         } else if (previousMoveCounter >= 0L && gameState.moveCounter != previousMoveCounter) {
@@ -640,6 +671,7 @@ fun GameBoardScreen(
                             allPieces = piecesMap,
                             movablePieceIds = movableSet,
                             animatedPieceCells = renderedAnimatedCells,
+                            movingPieceScale = movingPieceScale,
                             playerPalette = setup.playerColors,
                             onCellPiecesTapped = { tapped ->
                                 if (!replayUiState.isReplayMode && renderedAnimatedCells.isEmpty()) {

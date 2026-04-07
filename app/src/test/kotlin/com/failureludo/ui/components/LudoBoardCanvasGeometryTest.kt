@@ -36,7 +36,7 @@ class LudoBoardCanvasGeometryTest {
         val unclamped = Offset(20f, -20f)
 
         val clamped = clampOffsetToOverflow(unclamped, radius, cellSize)
-        val expectedMaxOffset = ((cellSize * 0.5f) + (cellSize * 0.18f) - radius)
+        val expectedMaxOffset = ((cellSize * 0.5f) + (cellSize * 0.22f) - radius)
             .coerceAtLeast(0f)
 
         assertEquals(expectedMaxOffset, clamped.x, 0.0001f)
@@ -74,8 +74,8 @@ class LudoBoardCanvasGeometryTest {
         val maxAbsX = quadOffsets.maxOf { kotlin.math.abs(it.x) }
         val maxAbsY = quadOffsets.maxOf { kotlin.math.abs(it.y) }
 
-        assertEquals(cellSize * 0.22f, maxAbsX, 0.0001f)
-        assertEquals(cellSize * 0.22f, maxAbsY, 0.0001f)
+        assertEquals(cellSize * 0.26f, maxAbsX, 0.0001f)
+        assertEquals(cellSize * 0.26f, maxAbsY, 0.0001f)
     }
 
     @Test
