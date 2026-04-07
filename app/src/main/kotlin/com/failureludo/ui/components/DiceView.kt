@@ -13,9 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.failureludo.ui.theme.Primary
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -48,18 +49,46 @@ fun DiceView(
 
     val rollScale = remember { Animatable(1f) }
     val rollRotation = remember { Animatable(0f) }
+    val rollTiltX = remember { Animatable(0f) }
+    val rollTiltY = remember { Animatable(0f) }
+    var displayedValue by remember { mutableStateOf(diceValue) }
 
     LaunchedEffect(diceValue) {
         if (diceValue == null) return@LaunchedEffect
 
-        rollScale.snapTo(0.88f)
-        rollRotation.snapTo(-10f)
+        val spinTurns = 1 + (diceValue % 2)
+        val spinDirection = if (diceValue % 2 == 0) 1f else -1f
+        val spinAngle = 360f * spinTurns * spinDirection
+        val spinDuration = 220 + (spinTurns * 70)
+        val tiltBase = 18f + (diceValue * 2f)
+        val tiltDirection = if (diceValue % 2 == 0) -1f else 1f
+        val tiltTargetX = tiltBase * tiltDirection
+        val tiltTargetY = tiltBase * -tiltDirection
+
+        val scrambleFaces = listOf(1, 2, 3, 4, 5, 6).filter { it != diceValue }
+        val scrambleStepMillis = 50
+        val scrambleDuration = (spinDuration - scrambleStepMillis).coerceAtLeast(scrambleStepMillis)
+        val scrambleSteps = (scrambleDuration / scrambleStepMillis).coerceAtLeast(1)
+
+        rollScale.snapTo(0.85f)
+        rollRotation.snapTo(0f)
+        rollTiltX.snapTo(0f)
+        rollTiltY.snapTo(0f)
+        displayedValue = scrambleFaces.firstOrNull() ?: diceValue
 
         kotlinx.coroutines.coroutineScope {
             launch {
+                repeat(scrambleSteps) { index ->
+                    val face = scrambleFaces[index % scrambleFaces.size]
+                    displayedValue = face
+                    delay(scrambleStepMillis.toLong())
+                }
+                displayedValue = diceValue
+            }
+            launch {
                 rollScale.animateTo(
                     targetValue = 1.08f,
-                    animationSpec = tween(durationMillis = 110)
+                    animationSpec = tween(durationMillis = 120)
                 )
                 rollScale.animateTo(
                     targetValue = 1f,
@@ -70,12 +99,44 @@ fun DiceView(
                 )
             }
             launch {
-                rollRotation.animateTo(targetValue = 10f, animationSpec = tween(durationMillis = 110))
                 rollRotation.animateTo(
+                    targetValue = spinAngle,
+                    animationSpec = tween(
+                        durationMillis = spinDuration,
+                        easing = FastOutSlowInEasing
+                    )
+                )
+                rollRotation.snapTo(spinAngle % 360f)
+            }
+            launch {
+                rollTiltX.animateTo(
+                    targetValue = tiltTargetX,
+                    animationSpec = tween(
+                        durationMillis = (spinDuration * 0.6f).toInt(),
+                        easing = FastOutSlowInEasing
+                    )
+                )
+                rollTiltX.animateTo(
                     targetValue = 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
+                    animationSpec = tween(
+                        durationMillis = (spinDuration * 0.4f).toInt(),
+                        easing = FastOutSlowInEasing
+                    )
+                )
+            }
+            launch {
+                rollTiltY.animateTo(
+                    targetValue = tiltTargetY,
+                    animationSpec = tween(
+                        durationMillis = (spinDuration * 0.5f).toInt(),
+                        easing = FastOutSlowInEasing
+                    )
+                )
+                rollTiltY.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(
+                        durationMillis = (spinDuration * 0.5f).toInt(),
+                        easing = FastOutSlowInEasing
                     )
                 )
             }
@@ -133,7 +194,12 @@ fun DiceView(
             modifier = Modifier
                 .size(size)
                 .scale(baseScale * rollScale.value)
-                .rotate(rollRotation.value)
+                .graphicsLayer {
+                    rotationZ = rollRotation.value
+                    rotationX = rollTiltX.value
+                    rotationY = rollTiltY.value
+                    cameraDistance = 12f * density
+                }
                 .alpha(if (isInactive) 0.48f else 1f)
                 .clip(RoundedCornerShape(14.dp))
                 .background(if (isInactive) Color(0xFFD0D0D0) else Color.White)
@@ -196,7 +262,7 @@ fun DiceView(
             )
         } else {
             DiceFace(
-                value = diceValue,
+                value = displayedValue ?: diceValue,
                 size = size,
                 dotColor = if (isInactive) Color(0xFF5F5F5F) else Color.Black
             )
