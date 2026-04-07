@@ -1,9 +1,17 @@
 **/build/
+.idea/
 .idea/caches/
+*.iml
+.vscode/
 .kotlin/
 .gradle/
+**/.cxx/
+**/.externalNativeBuild/
 local.properties
 app/release/
+.DS_Store
+Thumbs.db
+/captures/
 
 # Local IDE/copilot artifacts
 .idea/compiler.xml
