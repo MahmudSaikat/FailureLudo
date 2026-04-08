@@ -4,6 +4,11 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.failureludo.ai.AssetJsonPolicyMoveScorer
+import com.failureludo.ai.BotPolicyEngine
+import com.failureludo.ai.HeuristicBotPolicyEngine
+import com.failureludo.ai.ModelFirstBotPolicyEngine
+import com.failureludo.ai.resolveDecisionPieceOrNull
 import com.failureludo.data.FeedbackSettings
 import com.failureludo.data.GamePreferencesStore
 import com.failureludo.data.GameSessionStore
@@ -24,6 +29,7 @@ import com.failureludo.engine.GameEngine
 import com.failureludo.engine.GameMode
 import com.failureludo.engine.GameRules
 import com.failureludo.engine.GameState
+import com.failureludo.engine.HeuristicBotMoveSelector
 import com.failureludo.engine.Piece
 import com.failureludo.engine.PiecePosition
 import com.failureludo.engine.PlayerColor
@@ -54,6 +60,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val preferencesStore = GamePreferencesStore(application.applicationContext)
     private val historyRepository: GameHistoryRepository =
         LocalGameHistoryRepository(GameHistoryStore(application.applicationContext))
+    private val aiBotPolicyEngine: BotPolicyEngine = ModelFirstBotPolicyEngine(
+        scorer = AssetJsonPolicyMoveScorer(application.applicationContext),
+        fallback = HeuristicBotPolicyEngine
+    )
+    private val heuristicBotPolicyEngine: BotPolicyEngine = HeuristicBotPolicyEngine
 
     // ── Setup ─────────────────────────────────────────────────────────────────
 
@@ -539,13 +550,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (isReplayModeActive()) return
         if (_isTurnTransitionLocked.value) return
         val state = _gameState.value ?: return
-        if (state.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-            state.currentPlayer.type == PlayerType.BOT
-        ) {
-            botRollJob = viewModelScope.launch {
-                delay(BOT_ROLL_DELAY_MS)
-                botRollDice()
+        when (nextTurnAutomationAction(state)) {
+            TurnAutomationAction.NO_MOVES_ADVANCE -> {
+                scheduleNoMovesAdvance()
             }
+
+            TurnAutomationAction.BOT_ROLL -> {
+                if (botRollJob?.isActive == true) return
+                botRollJob = viewModelScope.launch {
+                    delay(BOT_ROLL_DELAY_MS)
+                    botRollDice()
+                }
+            }
+
+            TurnAutomationAction.BOT_SELECT -> {
+                scheduleBotSelectPiece()
+            }
+
+            TurnAutomationAction.NONE -> Unit
         }
     }
 
@@ -584,11 +606,29 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun botSelectPiece() {
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
-        val piece = GameEngine.botChoosePiece(state)
-        selectPiece(piece)
+
+        val decision = currentBotPolicyEngine().chooseMove(state)
+        val decisionPiece = decision?.let { resolveDecisionPieceOrNull(state, it) }
+        val fallbackMove = HeuristicBotMoveSelector.chooseMove(state)
+        val piece = decisionPiece ?: fallbackMove?.piece ?: HeuristicBotMoveSelector.choosePiece(state)
+        val deferHomeEntry = if (decisionPiece != null) {
+            decision?.deferHomeEntry == true
+        } else {
+            fallbackMove?.deferHomeEntry == true
+        }
+
+        applyPieceSelection(piece, deferHomeEntry = deferHomeEntry)
+    }
+
+    private fun currentBotPolicyEngine(): BotPolicyEngine {
+        return when (_setupState.value.botBehaviorMode) {
+            BotBehaviorMode.AI_UNDER_DEVELOPMENT -> aiBotPolicyEngine
+            BotBehaviorMode.HEURISTIC -> heuristicBotPolicyEngine
+        }
     }
 
     private fun scheduleNoMovesAdvance() {
+        if (noMovesJob?.isActive == true) return
         noMovesJob = viewModelScope.launch {
             delay(1_200)
             handleNoMoves()
@@ -596,6 +636,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun scheduleBotSelectPiece() {
+        if (botSelectJob?.isActive == true) return
         botSelectJob = viewModelScope.launch {
             delay(600)
             botSelectPiece()
@@ -717,6 +758,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val activePlayers = state.players.filter { it.isActive }
         val tags = mutableMapOf<String, String>()
         tags["Mode"] = setup.mode.name
+        tags["BotBehaviorMode"] = setup.botBehaviorMode.name
         tags["ActivePlayerIds"] = activePlayers.joinToString(",") { it.id.value.toString() }
         state.players.forEach { player ->
             tags["PlayerType.${player.id.value}"] = player.type.name
@@ -793,6 +835,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val mode = document.tags["Mode"]
             ?.let { runCatching { GameMode.valueOf(it) }.getOrNull() }
             ?: GameMode.FREE_FOR_ALL
+        val botBehaviorMode = document.tags["BotBehaviorMode"]
+            ?.let { runCatching { BotBehaviorMode.valueOf(it) }.getOrNull() }
+            ?: currentSetup.botBehaviorMode
 
         val playerTypes = PlayerColor.entries.associateWith { color ->
             val id = PlayerId(color.ordinal + 1)
@@ -813,7 +858,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             playerTypes = playerTypes,
             playerNames = defaultNames,
             playerColors = currentSetup.playerColors,
-            mode = mode
+            mode = mode,
+            botBehaviorMode = botBehaviorMode
         )
     }
 
@@ -939,6 +985,36 @@ data class ReplayUiState(
 
     val canStepForward: Boolean
         get() = isReplayMode && currentPly < totalPly
+}
+
+internal enum class TurnAutomationAction {
+    NONE,
+    NO_MOVES_ADVANCE,
+    BOT_ROLL,
+    BOT_SELECT
+}
+
+internal fun nextTurnAutomationAction(state: GameState): TurnAutomationAction {
+    return when (state.turnPhase) {
+        TurnPhase.NO_MOVES_AVAILABLE -> TurnAutomationAction.NO_MOVES_ADVANCE
+        TurnPhase.WAITING_FOR_ROLL -> {
+            if (state.currentPlayer.type == PlayerType.BOT) {
+                TurnAutomationAction.BOT_ROLL
+            } else {
+                TurnAutomationAction.NONE
+            }
+        }
+
+        TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
+            if (state.currentPlayer.type == PlayerType.BOT) {
+                TurnAutomationAction.BOT_SELECT
+            } else {
+                TurnAutomationAction.NONE
+            }
+        }
+
+        TurnPhase.GAME_OVER -> TurnAutomationAction.NONE
+    }
 }
 
 internal fun singleMoveAssistPieceCandidate(

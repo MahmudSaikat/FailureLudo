@@ -337,39 +337,6 @@ object GameEngine {
         }
     }
 
-    // ── Bot ──────────────────────────────────────────────────────────────────
-
-    /**
-     * Chooses a piece for a bot player using a simple priority heuristic:
-     * 1. Capture an opponent
-     * 2. Finish a piece (reach center)
-     * 3. Move the piece closest to home (furthest along)
-     * 4. Enter a new piece (if dice == 6)
-     */
-    fun botChoosePiece(state: GameState): Piece {
-        val movable = state.movablePieces
-        val diceValue = state.lastDice!!.value
-
-        // 1. Capture
-        movable.firstOrNull { piece ->
-            GameRules.countCaptures(piece, diceValue, piece.color, state.players, state.mode) > 0
-        }?.let { return it }
-
-        // 2. Finish
-        movable.firstOrNull { piece ->
-            GameRules.computeDestination(piece, diceValue, piece.color, state.players, state.mode) is PiecePosition.Finished
-        }?.let { return it }
-
-        // 3. Move the most-advanced active piece
-        movable
-            .filter { it.isActive }
-            .maxByOrNull { pieceProgress(it, it.color) }
-            ?.let { return it }
-
-        // 4. Enter from home base
-        return movable.first()
-    }
-
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun advanceToNextTurn(state: GameState): GameState {
@@ -404,13 +371,4 @@ object GameEngine {
         return unlocked
     }
 
-    /** Rough numeric progress value for a piece (higher = closer to finishing). */
-    private fun pieceProgress(piece: Piece, color: PlayerColor): Int = when (piece.position) {
-        is PiecePosition.HomeBase -> 0
-        is PiecePosition.MainTrack -> {
-            Board.relativePosition(color, piece.position.index) + 1
-        }
-        is PiecePosition.HomeColumn -> Board.MAIN_TRACK_SIZE + piece.position.step
-        PiecePosition.Finished -> Board.MAIN_TRACK_SIZE + Board.HOME_COLUMN_STEPS + 1
-    }
 }

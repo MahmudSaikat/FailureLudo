@@ -28,6 +28,7 @@ import com.failureludo.engine.GameMode
 import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
 import com.failureludo.ui.theme.*
+import com.failureludo.viewmodel.BotBehaviorMode
 import com.failureludo.viewmodel.defaultPlayerColors
 import com.failureludo.viewmodel.GameViewModel
 import com.failureludo.viewmodel.SetupState
@@ -84,6 +85,13 @@ fun GameSetupScreen(
                         setup.copy(mode = selectedMode)
                     }
                     viewModel.updateSetup(nextSetup)
+                }
+            )
+
+            BotBehaviorSection(
+                selected = setup.botBehaviorMode,
+                onSelect = { selectedMode ->
+                    viewModel.updateSetup(setup.copy(botBehaviorMode = selectedMode))
                 }
             )
 
@@ -226,6 +234,46 @@ private fun GameModeSection(selected: GameMode, onSelect: (GameMode) -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun BotBehaviorSection(
+    selected: BotBehaviorMode,
+    onSelect: (BotBehaviorMode) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Bot Behavior",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = Primary
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FilterChip(
+                selected = selected == BotBehaviorMode.AI_UNDER_DEVELOPMENT,
+                onClick = { onSelect(BotBehaviorMode.AI_UNDER_DEVELOPMENT) },
+                label = { Text("AI (under development)") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Primary,
+                    selectedLabelColor = OnPrimary
+                )
+            )
+            FilterChip(
+                selected = selected == BotBehaviorMode.HEURISTIC,
+                onClick = { onSelect(BotBehaviorMode.HEURISTIC) },
+                label = { Text("Heuristic") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Primary,
+                    selectedLabelColor = OnPrimary
+                )
+            )
+        }
+        Text(
+            "Applies to all players set as bot.",
+            style = MaterialTheme.typography.bodySmall,
+            color = OnSurface.copy(alpha = 0.65f)
+        )
     }
 }
 

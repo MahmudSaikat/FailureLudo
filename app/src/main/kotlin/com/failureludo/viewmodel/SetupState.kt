@@ -9,6 +9,11 @@ import com.failureludo.ui.theme.LudoGreen
 import com.failureludo.ui.theme.LudoRed
 import com.failureludo.ui.theme.LudoYellow
 
+enum class BotBehaviorMode {
+    AI_UNDER_DEVELOPMENT,
+    HEURISTIC
+}
+
 /**
  * UI state for the Game Setup screen.
  * Captured before starting a game so it can be replayed.
@@ -20,7 +25,8 @@ data class SetupState(
     val playerTypes: Map<PlayerColor, PlayerType> = PlayerColor.entries.associateWith { PlayerType.HUMAN },
     val playerNames: Map<PlayerColor, String> = defaultPlayerNames(),
     val playerColors: Map<PlayerColor, Color> = defaultPlayerColors(),
-    val mode: GameMode = GameMode.FREE_FOR_ALL
+    val mode: GameMode = GameMode.FREE_FOR_ALL,
+    val botBehaviorMode: BotBehaviorMode = BotBehaviorMode.AI_UNDER_DEVELOPMENT
 )
 
 fun defaultPlayerNames(): Map<PlayerColor, String> = mapOf(

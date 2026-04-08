@@ -19,6 +19,7 @@ import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerId
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
+import com.failureludo.viewmodel.BotBehaviorMode
 import com.failureludo.viewmodel.SetupState
 import com.failureludo.viewmodel.defaultPlayerColors
 import kotlinx.coroutines.flow.catch
@@ -110,11 +111,12 @@ class GameSessionStore(private val context: Context) {
             .put("playerNames", playerNamesObj)
             .put("playerColors", playerColorsObj)
             .put("mode", state.mode.name)
+            .put("botBehaviorMode", state.botBehaviorMode.name)
     }
 
     private fun setupStateFromJson(json: JSONObject): SetupState {
         val schemaVersion = json.optInt("schemaVersion", 0)
-        require(schemaVersion == SESSION_SCHEMA_VERSION) {
+        require(schemaVersion in 3..4) {
             "Unsupported setup schema version: $schemaVersion"
         }
 
@@ -143,13 +145,17 @@ class GameSessionStore(private val context: Context) {
         }
 
         val mode = GameMode.valueOf(json.getString("mode"))
+        val botBehaviorMode = runCatching {
+            BotBehaviorMode.valueOf(json.optString("botBehaviorMode", BotBehaviorMode.AI_UNDER_DEVELOPMENT.name))
+        }.getOrDefault(BotBehaviorMode.AI_UNDER_DEVELOPMENT)
 
         return SetupState(
             activeColors = activeColors,
             playerTypes = playerTypes,
             playerNames = playerNames,
             playerColors = playerColors,
-            mode = mode
+            mode = mode,
+            botBehaviorMode = botBehaviorMode
         )
     }
 
