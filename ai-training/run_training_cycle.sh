@@ -43,6 +43,12 @@ python_bin="python"
 skip_dataset="0"
 skip_train="0"
 
+print_cycle_progress() {
+  local pct="$1"
+  local stage="$2"
+  echo "cycle_progress=${pct}% stage=${stage}"
+}
+
 usage() {
     cat <<'EOF'
 Usage: ai-training/run_training_cycle.sh [options]
@@ -135,7 +141,10 @@ done
 
 cd "$REPO_ROOT"
 
+print_cycle_progress "0" "start"
+
 if [[ "$skip_dataset" != "1" ]]; then
+  print_cycle_progress "5" "dataset_generation_started"
     ./gradlew :game-engine:generateSelfPlayDataset \
       -Pepisodes="$dataset_episodes" \
       -PmaxPly="$dataset_max_ply" \
@@ -145,11 +154,14 @@ if [[ "$skip_dataset" != "1" ]]; then
       -Ppolicy=heuristic \
       -PexplorationEpsilon="$dataset_exploration_epsilon" \
       -Poutput="$dataset_path"
+  print_cycle_progress "35" "dataset_generation_completed"
 else
     echo "Skipping dataset generation"
+  print_cycle_progress "35" "dataset_generation_skipped"
 fi
 
 if [[ "$skip_train" != "1" ]]; then
+  print_cycle_progress "40" "training_started"
     train_args=(
       ai-training/train_policy.py
       --dataset "$dataset_path"
@@ -166,6 +178,7 @@ if [[ "$skip_train" != "1" ]]; then
       --draw-outcome-weight "$train_draw_outcome_weight"
       --outcome-margin-weight "$train_outcome_margin_weight"
       --device "$train_device"
+      --show-batch-progress
     )
 
     if [[ -n "$train_max_samples" ]]; then
@@ -173,11 +186,14 @@ if [[ "$skip_train" != "1" ]]; then
     fi
 
     "$python_bin" "${train_args[@]}"
+    print_cycle_progress "70" "training_completed"
 else
     echo "Skipping training"
+    print_cycle_progress "70" "training_skipped"
 fi
 
 if [[ -n "$seed_list" ]]; then
+  print_cycle_progress "75" "arena_evaluation_started"
   latency_args=()
   if [[ -n "$max_p95_decision_ms" ]]; then
     latency_args+=("-PmaxP95DecisionMs=$max_p95_decision_ms")
@@ -197,7 +213,9 @@ if [[ -n "$seed_list" ]]; then
     -PminimumDecidedGames="$minimum_decided_games" \
     -PsummaryOutput="$arena_summary" \
     "${latency_args[@]}"
+  print_cycle_progress "85" "arena_evaluation_completed"
 else
+  print_cycle_progress "75" "arena_evaluation_started"
   latency_args=()
   if [[ -n "$max_p95_decision_ms" ]]; then
     latency_args+=("-PmaxP95DecisionMs=$max_p95_decision_ms")
@@ -216,9 +234,11 @@ else
     -PminimumDecidedGames="$minimum_decided_games" \
     -PsummaryOutput="$arena_summary" \
     "${latency_args[@]}"
+  print_cycle_progress "85" "arena_evaluation_completed"
 fi
 
 if [[ -n "$seed_list" ]]; then
+  print_cycle_progress "90" "promotion_gate_started"
   latency_args=()
   if [[ -n "$max_p95_decision_ms" ]]; then
     latency_args+=("-PmaxP95DecisionMs=$max_p95_decision_ms")
@@ -239,7 +259,9 @@ if [[ -n "$seed_list" ]]; then
     -PsummaryOutput="$gate_summary" \
     -PpromoteTo="$promote_to" \
     "${latency_args[@]}"
+  print_cycle_progress "100" "promotion_gate_completed"
 else
+  print_cycle_progress "90" "promotion_gate_started"
   latency_args=()
   if [[ -n "$max_p95_decision_ms" ]]; then
     latency_args+=("-PmaxP95DecisionMs=$max_p95_decision_ms")
@@ -259,6 +281,7 @@ else
     -PsummaryOutput="$gate_summary" \
     -PpromoteTo="$promote_to" \
     "${latency_args[@]}"
+  print_cycle_progress "100" "promotion_gate_completed"
 fi
 
 echo "Cycle complete."

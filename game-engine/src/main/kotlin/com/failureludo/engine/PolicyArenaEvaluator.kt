@@ -44,12 +44,16 @@ object PolicyArenaEvaluator {
     fun evaluate(
         challengerPolicy: SelfPlayPolicy,
         baselinePolicy: SelfPlayPolicy,
-        config: PolicyArenaConfig = PolicyArenaConfig()
+        config: PolicyArenaConfig = PolicyArenaConfig(),
+        onProgress: ((completedEpisodes: Int, totalEpisodes: Int) -> Unit)? = null,
+        progressStepPercent: Int = 10
     ): PolicyArenaSummary {
         require(config.episodes > 0) { "episodes must be > 0." }
         require(config.maxPly > 0) { "maxPly must be > 0." }
 
         val activeColors = normalizedActiveColors(config)
+        val effectiveProgressStepPercent = progressStepPercent.coerceIn(1, 100)
+        var nextProgressPercent = effectiveProgressStepPercent
         var challengerWins = 0
         var baselineWins = 0
         var draws = 0
@@ -88,6 +92,15 @@ object PolicyArenaEvaluator {
                 EpisodeOutcome.CHALLENGER -> challengerWins += 1
                 EpisodeOutcome.BASELINE -> baselineWins += 1
                 EpisodeOutcome.DRAW -> draws += 1
+            }
+
+            val completedEpisodes = episodeIndex + 1
+            val percent = (completedEpisodes * 100) / config.episodes
+            if ((percent >= nextProgressPercent || completedEpisodes == config.episodes) && onProgress != null) {
+                onProgress(completedEpisodes, config.episodes)
+                while (nextProgressPercent <= percent) {
+                    nextProgressPercent += effectiveProgressStepPercent
+                }
             }
         }
 

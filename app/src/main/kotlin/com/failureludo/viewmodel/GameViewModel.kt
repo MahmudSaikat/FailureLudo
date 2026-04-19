@@ -469,7 +469,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         clearPendingAutomationJobs()
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
-        if (piece !in state.movablePieces) return
+        if (piece !in state.movablePieces) {
+            checkForBotTurn()
+            return
+        }
 
         val newState = GameEngine.selectPiece(state, piece, deferHomeEntry)
         setGameState(newState)
@@ -549,7 +552,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun checkForBotTurn() {
         if (isReplayModeActive()) return
         if (_isTurnTransitionLocked.value) return
-        val state = _gameState.value ?: return
+        var state = _gameState.value ?: return
+        val normalizedState = normalizeAutomationSelectionPhaseState(state)
+        if (normalizedState != state) {
+            setGameState(normalizedState, recordHistory = false, clearRedo = false)
+            state = normalizedState
+        }
         when (nextTurnAutomationAction(state)) {
             TurnAutomationAction.NO_MOVES_ADVANCE -> {
                 scheduleNoMovesAdvance()
@@ -606,11 +614,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private fun botSelectPiece() {
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
+        if (state.movablePieces.isEmpty()) {
+            checkForBotTurn()
+            return
+        }
 
         val decision = currentBotPolicyEngine().chooseMove(state)
         val decisionPiece = decision?.let { resolveDecisionPieceOrNull(state, it) }
         val fallbackMove = HeuristicBotMoveSelector.chooseMove(state)
-        val piece = decisionPiece ?: fallbackMove?.piece ?: HeuristicBotMoveSelector.choosePiece(state)
+        val piece = decisionPiece ?: fallbackMove?.piece ?: state.movablePieces.firstOrNull()
+        if (piece == null || piece !in state.movablePieces) {
+            checkForBotTurn()
+            return
+        }
         val deferHomeEntry = if (decisionPiece != null) {
             decision?.deferHomeEntry == true
         } else {
@@ -1014,6 +1030,27 @@ internal fun nextTurnAutomationAction(state: GameState): TurnAutomationAction {
         }
 
         TurnPhase.GAME_OVER -> TurnAutomationAction.NONE
+    }
+}
+
+internal fun normalizeAutomationSelectionPhaseState(state: GameState): GameState {
+    if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return state
+
+    val hasMovablePieces = state.movablePieces.isNotEmpty()
+    val hasDiceSnapshot = state.lastDice != null
+    if (hasMovablePieces && hasDiceSnapshot) return state
+
+    return when {
+        !hasMovablePieces -> state.copy(
+            turnPhase = TurnPhase.NO_MOVES_AVAILABLE,
+            movablePieces = emptyList()
+        )
+
+        else -> state.copy(
+            turnPhase = TurnPhase.WAITING_FOR_ROLL,
+            lastDice = null,
+            movablePieces = emptyList()
+        )
     }
 }
 

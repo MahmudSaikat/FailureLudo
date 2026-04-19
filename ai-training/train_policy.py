@@ -12,6 +12,7 @@ import argparse
 import json
 import math
 import random
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +53,7 @@ class DatasetStats:
     total_rows: int = 0
     move_rows: int = 0
     kept_rows: int = 0
+    invalid_json_rows: int = 0
     single_option_rows: int = 0
     multi_option_rows: int = 0
     positive_outcome_rows: int = 0
@@ -271,7 +273,13 @@ def load_samples(
             if not line:
                 continue
 
-            row = json.loads(line)
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                stats.invalid_json_rows += 1
+                if stats.invalid_json_rows <= 3:
+                    print(f"warning: skipped malformed JSON row at line={stats.total_rows}")
+                continue
             if row.get("actionType") != "MOVE":
                 continue
             stats.move_rows += 1
@@ -415,6 +423,7 @@ def train(
     weight_decay: float,
     outcome_margin_weight: float,
     seed: int,
+    show_batch_progress: bool,
 ) -> List[Dict[str, float]]:
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     history: List[Dict[str, float]] = []
@@ -422,6 +431,9 @@ def train(
     rng = random.Random(seed)
 
     for epoch in range(1, epochs + 1):
+        epoch_percent = (float(epoch) / float(max(1, epochs))) * 100.0
+        print(f"epoch {epoch}/{epochs} ({epoch_percent:.1f}%) started")
+
         model.train()
         indices = list(range(len(train_samples)))
         rng.shuffle(indices)
@@ -435,7 +447,14 @@ def train(
         total_decision_examples = 0
         total_decision_correct = 0
 
-        progress = tqdm(iter_batches(indices, batch_size), total=math.ceil(len(indices) / batch_size), desc=f"epoch {epoch}")
+        progress = tqdm(
+            iter_batches(indices, batch_size),
+            total=math.ceil(len(indices) / batch_size),
+            desc=f"epoch {epoch}/{epochs}",
+            disable=not show_batch_progress,
+            leave=False,
+            dynamic_ncols=True,
+        )
         for batch in progress:
             optimizer.zero_grad(set_to_none=True)
 
@@ -513,11 +532,14 @@ def train(
         history.append(summary)
 
         print(
-            "epoch {epoch}: train_loss={train_loss:.4f} train_margin_loss={train_margin_loss:.4f} "
+            "epoch {epoch}/{epochs} ({epoch_percent:.1f}%): "
+            "train_loss={train_loss:.4f} train_margin_loss={train_margin_loss:.4f} "
             "train_combined_loss={train_combined_loss:.4f} train_weighted_loss={train_weighted_loss:.4f} "
             "train_acc={train_acc:.3f} train_decision_acc={train_decision_acc:.3f} "
             "val_loss={val_loss:.4f} val_acc={val_acc:.3f} val_decision_acc={val_decision_acc:.3f}".format(
                 epoch=epoch,
+                epochs=epochs,
+                epoch_percent=epoch_percent,
                 train_loss=summary["train_loss"],
                 train_margin_loss=summary["train_margin_loss"],
                 train_combined_loss=summary["train_combined_loss"],
@@ -563,6 +585,11 @@ def parse_args() -> argparse.Namespace:
         choices=["auto", "cpu", "cuda", "mps"],
         help="Training device preference.",
     )
+    parser.add_argument(
+        "--show-batch-progress",
+        action="store_true",
+        help="Force detailed tqdm batch progress bars (interactive terminals already show these by default).",
+    )
     return parser.parse_args()
 
 
@@ -604,11 +631,13 @@ def main() -> None:
     )
     print(
         "dataset_stats total_rows={total_rows} move_rows={move_rows} kept_rows={kept_rows} "
+        "invalid_json_rows={invalid_json_rows} "
         "single_option={single_option} multi_option={multi_option} "
         "positive_outcomes={positive} negative_outcomes={negative} draws={draws}".format(
             total_rows=dataset_stats.total_rows,
             move_rows=dataset_stats.move_rows,
             kept_rows=dataset_stats.kept_rows,
+            invalid_json_rows=dataset_stats.invalid_json_rows,
             single_option=dataset_stats.single_option_rows,
             multi_option=dataset_stats.multi_option_rows,
             positive=dataset_stats.positive_outcome_rows,
@@ -633,6 +662,7 @@ def main() -> None:
         weight_decay=args.weight_decay,
         outcome_margin_weight=args.outcome_margin_weight,
         seed=args.seed,
+        show_batch_progress=args.show_batch_progress or sys.stdout.isatty(),
     )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -675,6 +705,7 @@ def main() -> None:
                     "total_rows": dataset_stats.total_rows,
                     "move_rows": dataset_stats.move_rows,
                     "kept_rows": dataset_stats.kept_rows,
+                    "invalid_json_rows": dataset_stats.invalid_json_rows,
                     "single_option_rows": dataset_stats.single_option_rows,
                     "multi_option_rows": dataset_stats.multi_option_rows,
                     "positive_outcome_rows": dataset_stats.positive_outcome_rows,

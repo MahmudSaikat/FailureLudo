@@ -28,6 +28,7 @@ fun main(args: Array<String>) {
     val summaryOutput = options["summaryOutput"] ?: "build/self-play/policy_promotion_gate_summary.json"
     val promoteTo = options["promoteTo"]
     val failOnGate = options["failOnGate"]?.lowercase()?.let { token -> token == "true" } ?: true
+    val inlineProgress = options["progressInline"]?.lowercase() != "false"
 
     val challengerPolicyBase = loadPolicy(
         policyName = challengerPolicyName,
@@ -42,8 +43,31 @@ fun main(args: Array<String>) {
         role = "baseline"
     )
 
+    val arenaProgressStepPercent = if (inlineProgress) 1 else 10
+    val evaluationSeedCount = if (seedList.isNotEmpty()) seedList.size else 1
+    val totalEvaluationEpisodes = episodes * evaluationSeedCount
+    var completedEvaluationEpisodes = 0
+
+    fun onArenaProgress(seedLabel: String, seedCompletedEpisodes: Int, seedTotalEpisodes: Int) {
+        val absoluteCompleted = completedEvaluationEpisodes + seedCompletedEpisodes
+        val percent = if (totalEvaluationEpisodes <= 0) 100 else {
+            (absoluteCompleted * 100) / totalEvaluationEpisodes
+        }
+        val message =
+            "Arena progress $percent% " +
+                "($absoluteCompleted/$totalEvaluationEpisodes episodes, $seedLabel: " +
+                "$seedCompletedEpisodes/$seedTotalEpisodes)"
+        if (inlineProgress) {
+            print("\r$message")
+            System.out.flush()
+        } else {
+            println(message)
+        }
+    }
+
     val seededSummaries = if (seedList.isNotEmpty()) {
         seedList.map { runSeed ->
+            println("Arena seed start seed=$runSeed")
             val summary = PolicyArenaEvaluator.evaluate(
                 challengerPolicy = challengerPolicy,
                 baselinePolicy = baselinePolicy,
@@ -53,11 +77,20 @@ fun main(args: Array<String>) {
                     seed = runSeed,
                     mode = mode,
                     activeColors = activeColors
-                )
+                ),
+                onProgress = { seedCompletedEpisodes, seedTotalEpisodes ->
+                    onArenaProgress("seed=$runSeed", seedCompletedEpisodes, seedTotalEpisodes)
+                },
+                progressStepPercent = arenaProgressStepPercent
             )
+            if (inlineProgress) {
+                println()
+            }
+            completedEvaluationEpisodes += episodes
             SeededArenaSummary(seed = runSeed, summary = summary)
         }
     } else {
+        println("Arena seed start seed=${seed ?: "none"}")
         val summary = PolicyArenaEvaluator.evaluate(
             challengerPolicy = challengerPolicy,
             baselinePolicy = baselinePolicy,
@@ -67,8 +100,16 @@ fun main(args: Array<String>) {
                 seed = seed,
                 mode = mode,
                 activeColors = activeColors
-            )
+            ),
+            onProgress = { seedCompletedEpisodes, seedTotalEpisodes ->
+                onArenaProgress("seed=${seed ?: "none"}", seedCompletedEpisodes, seedTotalEpisodes)
+            },
+            progressStepPercent = arenaProgressStepPercent
         )
+        if (inlineProgress) {
+            println()
+        }
+        completedEvaluationEpisodes += episodes
         listOf(SeededArenaSummary(seed = seed, summary = summary))
     }
 

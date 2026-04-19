@@ -675,7 +675,7 @@ fun GameBoardScreen(
                             playerPalette = setup.playerColors,
                             onCellPiecesTapped = { tapped ->
                                 if (!replayUiState.isReplayMode && renderedAnimatedCells.isEmpty()) {
-                                    val decision = resolveStackTapDecision(tapped)
+                                    val decision = resolveStackTapDecision(tapped, gameState.mode)
                                     when {
                                         decision.autoPiece != null -> viewModel.selectPiece(decision.autoPiece)
                                         decision.options.isNotEmpty() -> pendingStackChoice = StackMoveChoiceState(decision.options)
@@ -771,7 +771,22 @@ internal data class StackTapDecision(
     val options: List<StackMoveOption> = emptyList()
 )
 
-internal fun resolveStackTapDecision(tapped: TappedCellPieces): StackTapDecision {
+private enum class StackMoveMeaningType {
+    SINGLE,
+    PAIR
+}
+
+private data class StackMoveMeaning(
+    val type: StackMoveMeaningType,
+    val colors: Set<PlayerColor>
+)
+
+private data class StackPieceRef(
+    val color: PlayerColor,
+    val pieceId: Int
+)
+
+internal fun resolveStackTapDecision(tapped: TappedCellPieces, mode: GameMode): StackTapDecision {
     val allPieces = tapped.allPieces
         .distinctBy { it.color to it.id }
         .sortedWith(compareBy<Piece>({ it.lastMovedAt }, { it.id }))
@@ -785,53 +800,122 @@ internal fun resolveStackTapDecision(tapped: TappedCellPieces): StackTapDecision
     if (movablePieces.isEmpty()) return StackTapDecision()
     if (movablePieces.size == 1) return StackTapDecision(autoPiece = movablePieces.first())
 
-    fun defaultAutoPiece(): Piece = preferredMovablePiece ?: movablePieces.last()
+    fun chooseRepresentative(candidates: List<Piece>): Piece {
+        return preferredMovablePiece?.takeIf { preferred ->
+            candidates.any { it.color == preferred.color && it.id == preferred.id }
+        } ?: candidates.last()
+    }
 
     val mainIndex = (allPieces.firstOrNull()?.position as? PiecePosition.MainTrack)?.index
-        ?: return StackTapDecision(autoPiece = defaultAutoPiece())
+        ?: return StackTapDecision(autoPiece = chooseRepresentative(movablePieces))
     val sameMainCell = allPieces.all { (it.position as? PiecePosition.MainTrack)?.index == mainIndex }
-    if (!sameMainCell) return StackTapDecision(autoPiece = defaultAutoPiece())
+    if (!sameMainCell) return StackTapDecision(autoPiece = chooseRepresentative(movablePieces))
 
-    // Safe squares should never open chooser for multi-stack taps.
-    if (Board.isSafeSquare(mainIndex)) {
-        return StackTapDecision(autoPiece = defaultAutoPiece())
-    }
+    val actingSideKey = sideKey(movablePieces.first().color, mode)
+    val sameSideStack = allPieces.filter { sideKey(it.color, mode) == actingSideKey }
+    val pairRefs = doubleComponentRefsForTapStack(sameSideStack)
+    val pairLocked = isPairLockedForTapStack(mainIndex, pairRefs)
+    val pairColors = pairRefs.map { it.color }.toSet()
 
-    val sameColor = allPieces.all { it.color == allPieces.first().color }
-    if (!sameColor) {
-        return StackTapDecision(autoPiece = defaultAutoPiece())
-    }
-
-    val color = allPieces.first().color
-    val isLockedCell = mainIndex != Board.HOME_COLUMN_ENTRY.getValue(color)
-    if (!isLockedCell) {
-        return StackTapDecision(autoPiece = defaultAutoPiece())
-    }
-
-    // 3-piece non-safe stack: explicit choice between top single and locked pair when both are legal.
-    if (allPieces.size == 3) {
-        val topSingle = allPieces.maxWithOrNull(compareBy<Piece>({ it.lastMovedAt }, { it.id })) ?: return StackTapDecision(autoPiece = defaultAutoPiece())
-        val pairPieces = allPieces.filter { it != topSingle }
-        val topSingleLegal = movablePieces.any { it.id == topSingle.id && it.color == topSingle.color }
-        val pairRepresentative = pairPieces.firstOrNull { candidate ->
-            movablePieces.any { it.id == candidate.id && it.color == candidate.color }
-        }
-
-        if (topSingleLegal && pairRepresentative != null) {
-            return StackTapDecision(
-                options = listOf(
-                    StackMoveOption(label = "Move single", piece = topSingle, tint = playerColor(topSingle.color)),
-                    StackMoveOption(label = "Move pair", piece = pairRepresentative, tint = playerColor(pairRepresentative.color))
-                )
+    val groupedChoices = linkedMapOf<StackMoveMeaning, MutableList<Piece>>()
+    movablePieces.forEach { piece ->
+        val meaning = if (pairLocked && piece.toStackRef() in pairRefs) {
+            StackMoveMeaning(
+                type = StackMoveMeaningType.PAIR,
+                colors = pairColors
+            )
+        } else {
+            StackMoveMeaning(
+                type = StackMoveMeaningType.SINGLE,
+                colors = setOf(piece.color)
             )
         }
 
-        if (topSingleLegal) return StackTapDecision(autoPiece = topSingle)
-        if (pairRepresentative != null) return StackTapDecision(autoPiece = pairRepresentative)
+        groupedChoices.getOrPut(meaning) { mutableListOf() }.add(piece)
     }
 
-    // 4-piece same-color stack rule is intentionally deferred. Keep deterministic auto-choice for now.
-    return StackTapDecision(autoPiece = defaultAutoPiece())
+    if (groupedChoices.isEmpty()) {
+        return StackTapDecision(autoPiece = chooseRepresentative(movablePieces))
+    }
+
+    if (groupedChoices.size == 1) {
+        return StackTapDecision(autoPiece = chooseRepresentative(groupedChoices.values.first()))
+    }
+
+    val singleOptionColors = groupedChoices.keys
+        .filter { it.type == StackMoveMeaningType.SINGLE }
+        .flatMap { it.colors }
+        .toSet()
+    val shouldUseColorLabelsForSingles = singleOptionColors.size > 1
+
+    val options = groupedChoices.map { (meaning, candidates) ->
+        val representative = chooseRepresentative(candidates)
+        val label = when (meaning.type) {
+            StackMoveMeaningType.PAIR -> "Move pair"
+            StackMoveMeaningType.SINGLE -> {
+                if (shouldUseColorLabelsForSingles) {
+                    "Move ${representative.color.displayName}"
+                } else {
+                    "Move single"
+                }
+            }
+        }
+
+        StackMoveOption(
+            label = label,
+            piece = representative,
+            tint = playerColor(representative.color)
+        )
+    }
+
+    return StackTapDecision(options = options)
+}
+
+private fun Piece.toStackRef(): StackPieceRef = StackPieceRef(color = color, pieceId = id)
+
+private fun sideKey(color: PlayerColor, mode: GameMode): Int =
+    if (mode == GameMode.TEAM) color.teamIndex else color.ordinal
+
+private fun doubleComponentRefsForTapStack(stack: List<Piece>): Set<StackPieceRef> {
+    if (stack.size < 2) return emptySet()
+    if (stack.size == 2) return stack.map { it.toStackRef() }.toSet()
+
+    val topSingle = topSingleRefForTapStack(stack)
+    val candidates = stack
+        .map { it.toStackRef() to it }
+        .filter { (ref, _) -> ref != topSingle }
+        .sortedWith(
+            compareBy<Pair<StackPieceRef, Piece>>(
+                { it.second.lastMovedAt },
+                { it.first.color.ordinal },
+                { it.first.pieceId }
+            )
+        )
+
+    return candidates.take(2).map { it.first }.toSet()
+}
+
+private fun topSingleRefForTapStack(stack: List<Piece>): StackPieceRef? {
+    if (stack.size < 3) return null
+    val top = stack.maxWithOrNull(
+        compareBy<Piece>({ it.lastMovedAt }, { it.color.ordinal }, { it.id })
+    ) ?: return null
+
+    return top.toStackRef()
+}
+
+private fun isPairLockedForTapStack(mainIndex: Int, pairRefs: Set<StackPieceRef>): Boolean {
+    if (pairRefs.isEmpty()) return false
+    if (Board.isSafeSquare(mainIndex)) return false
+
+    val pairColors = pairRefs.map { it.color }.toSet()
+    val isMixedTeamPair = pairColors.size > 1
+    if (!isMixedTeamPair) {
+        val color = pairColors.firstOrNull() ?: return false
+        if (mainIndex == Board.HOME_COLUMN_ENTRY.getValue(color)) return false
+    }
+
+    return true
 }
 
 private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>, PiecePosition> {

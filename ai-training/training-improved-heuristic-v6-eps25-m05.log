@@ -1,0 +1,7 @@
+cycle_progress=0% stage=start
+Skipping dataset generation
+cycle_progress=35% stage=dataset_generation_skipped
+cycle_progress=40% stage=training_started
+device=cpu
+dataset_stats total_rows=1868680 move_rows=1598524 kept_rows=1200000 invalid_json_rows=0 single_option=0 multi_option=1200000 positive_outcomes=302114 negative_outcomes=897886 draws=0
+epoch 1/4 (25.0%) started

@@ -21,6 +21,7 @@ fun main(args: Array<String>) {
     require(explorationEpsilon in 0.0..1.0) {
         "explorationEpsilon must be in [0.0, 1.0]."
     }
+    val inlineProgress = options["progressInline"]?.lowercase() != "false"
     val policy = if (explorationEpsilon > 0.0) {
         EpsilonExplorationSelfPlayPolicy(basePolicy, explorationEpsilon)
     } else {
@@ -31,7 +32,22 @@ fun main(args: Array<String>) {
     val outputFile = File(outputPath)
     outputFile.parentFile?.mkdirs()
 
+    val progressStepPercent = if (inlineProgress) 1 else 10
+    var nextProgressPercent = progressStepPercent
+
+    fun emitProgress(completedEpisodes: Int) {
+        val percent = (completedEpisodes * 100) / episodeCount
+        val message = "Dataset progress $percent% ($completedEpisodes/$episodeCount episodes)"
+        if (inlineProgress) {
+            print("\r$message")
+            System.out.flush()
+        } else {
+            println(message)
+        }
+    }
+
     var written = 0
+    emitProgress(0)
     outputFile.bufferedWriter(Charsets.UTF_8).use { writer ->
         repeat(episodeCount) { episodeIndex ->
             val episode = SelfPlayRunner.playEpisode(
@@ -53,7 +69,20 @@ fun main(args: Array<String>) {
                 writer.appendLine(line)
                 written += 1
             }
+
+            val completedEpisodes = episodeIndex + 1
+            val percent = (completedEpisodes * 100) / episodeCount
+            if (percent >= nextProgressPercent || completedEpisodes == episodeCount) {
+                emitProgress(completedEpisodes)
+                while (nextProgressPercent <= percent) {
+                    nextProgressPercent += progressStepPercent
+                }
+            }
         }
+    }
+
+    if (inlineProgress) {
+        println()
     }
 
     val elapsedMs = System.currentTimeMillis() - startedAt
