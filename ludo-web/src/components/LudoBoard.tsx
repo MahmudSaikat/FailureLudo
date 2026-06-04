@@ -7,24 +7,21 @@ import {
   SAFE_SQUARES,
   ENTRY_POSITIONS,
 } from '../engine/board';
+import {
+  PLAYER_COLOR,
+  PLAYER_COLOR_LIGHT,
+  BOARD_WHITE,
+  BOARD_CREAM,
+  SAFE_SQUARE,
+  SECONDARY,
+} from '../theme';
 
 const GRID = 15;
 const CELL = 40; // px per grid cell
 const SIZE = GRID * CELL;
 
-const COLOR_MAP: Record<PlayerColor, string> = {
-  RED: '#e53935',
-  BLUE: '#1e88e5',
-  YELLOW: '#fdd835',
-  GREEN: '#43a047',
-};
-
-const COLOR_LIGHT: Record<PlayerColor, string> = {
-  RED: '#ffcdd2',
-  BLUE: '#bbdefb',
-  YELLOW: '#fff9c4',
-  GREEN: '#c8e6c9',
-};
+const COLOR_MAP = PLAYER_COLOR;
+const COLOR_LIGHT = PLAYER_COLOR_LIGHT;
 
 const ALL_COLORS: PlayerColor[] = ['RED', 'BLUE', 'YELLOW', 'GREEN'];
 
@@ -72,18 +69,18 @@ function homeAreaRange(color: PlayerColor): [[number, number], [number, number]]
 
 function getCellBackground(row: number, col: number): string {
   const key = `${row},${col}`;
-  if (row === CENTER[0] && col === CENTER[1]) return '#f5f5f5';
+  if (row === CENTER[0] && col === CENTER[1]) return BOARD_WHITE;
   const homeColInfo = HOME_COL_MAP.get(key);
   if (homeColInfo) return COLOR_MAP[homeColInfo.color];
   const trackIdx = TRACK_INDEX_MAP.get(key);
   if (trackIdx !== undefined) {
     const entryColor = ENTRY_COLOR_MAP.get(trackIdx);
     if (entryColor) return COLOR_MAP[entryColor];
-    return SAFE_SQUARES.has(trackIdx) ? '#f5f5f5' : '#fafafa';
+    return SAFE_SQUARES.has(trackIdx) ? SAFE_SQUARE : BOARD_WHITE;
   }
   const areaColor = HOME_AREA_MAP.get(key);
   if (areaColor) return COLOR_LIGHT[areaColor];
-  return '#e0e0e0';
+  return BOARD_CREAM;
 }
 
 // ── Piece location helpers ─────────────────────────────────────────────────
@@ -130,6 +127,22 @@ function starPoints(cx: number, cy: number, outerR: number, innerR: number, pts:
   return coords.join(' ');
 }
 
+function darken(_hex: string): string {
+  return 'rgba(0,0,0,0.35)';
+}
+
+// ── Pawn silhouette (body + head, like the native canvas token) ──────────────
+function Pawn({ cx, cy, r, color }: { cx: number; cy: number; r: number; color: string }) {
+  return (
+    <g pointerEvents="none">
+      <ellipse cx={cx} cy={cy + r * 0.62} rx={r * 0.72} ry={r * 0.26} fill="rgba(0,0,0,0.16)" />
+      <circle cx={cx} cy={cy + r * 0.18} r={r * 0.82} fill={color} stroke={darken(color)} strokeWidth={1} />
+      <circle cx={cx} cy={cy - r * 0.48} r={r * 0.46} fill={color} stroke={darken(color)} strokeWidth={1} />
+      <circle cx={cx - r * 0.18} cy={cy - r * 0.58} r={r * 0.15} fill="rgba(255,255,255,0.45)" />
+    </g>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 interface Props {
@@ -147,11 +160,14 @@ export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Pr
         width={SIZE}
         height={SIZE}
         viewBox={`0 0 ${SIZE} ${SIZE}`}
-        style={{ maxWidth: '100%', height: 'auto' }}
+        style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
       >
         <defs>
           <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }`}</style>
         </defs>
+
+        {/* board backdrop */}
+        <rect width={SIZE} height={SIZE} fill={BOARD_CREAM} rx={10} />
 
         {/* ── Layer 1: cell backgrounds ── */}
         {Array.from({ length: GRID }, (_, row) =>
@@ -163,26 +179,34 @@ export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Pr
               trackIdx !== undefined &&
               SAFE_SQUARES.has(trackIdx) &&
               !ENTRY_COLOR_MAP.has(trackIdx);
+            const onTrack = trackIdx !== undefined;
             const yardInfo = HOME_YARD_MAP.get(key);
 
             return (
               <g key={key} transform={`translate(${col * CELL},${row * CELL})`}>
-                <rect width={CELL} height={CELL} fill={bg} stroke="#ccc" strokeWidth={0.5} />
+                <rect
+                  width={CELL}
+                  height={CELL}
+                  fill={bg}
+                  stroke="rgba(0,0,0,0.10)"
+                  strokeWidth={onTrack ? 1 : 0.5}
+                  rx={onTrack ? 3 : 0}
+                />
                 {isSafe && (
                   <polygon
-                    points={`${CELL / 2},4 ${CELL - 4},${CELL / 2} ${CELL / 2},${CELL - 4} 4,${CELL / 2}`}
+                    points={starPoints(CELL / 2, CELL / 2, CELL * 0.32, CELL * 0.14, 5)}
                     fill="none"
-                    stroke="#aaa"
-                    strokeWidth={1}
+                    stroke="rgba(0,0,0,0.30)"
+                    strokeWidth={1.2}
                   />
                 )}
-                {/* Home yard slot circle — rendered here so pawns draw on top */}
+                {/* Home yard slot circle — pawns draw on top */}
                 {yardInfo && (
                   <circle
                     cx={CELL / 2}
                     cy={CELL / 2}
                     r={CELL * 0.38}
-                    fill={COLOR_LIGHT[yardInfo.color]}
+                    fill="#ffffff"
                     stroke={COLOR_MAP[yardInfo.color]}
                     strokeWidth={2}
                     pointerEvents="none"
@@ -193,17 +217,17 @@ export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Pr
           })
         )}
 
-        {/* ── Layer 2: center star ── */}
+        {/* ── Layer 2: center (finish) ── */}
         <g transform={`translate(${CENTER[1] * CELL},${CENTER[0] * CELL})`} pointerEvents="none">
           <polygon
-            points={starPoints(CELL / 2, CELL / 2, CELL * 0.45, CELL * 0.22, 6)}
-            fill="#ffb300"
-            stroke="#f57f17"
-            strokeWidth={1}
+            points={starPoints(CELL / 2, CELL / 2, CELL * 0.46, CELL * 0.2, 6)}
+            fill={SECONDARY}
+            stroke="#b8862f"
+            strokeWidth={1.2}
           />
         </g>
 
-        {/* ── Layer 3: pawns (always on top, always receive clicks) ── */}
+        {/* ── Layer 3: pawns (always on top) ── */}
         {Array.from({ length: GRID }, (_, row) =>
           Array.from({ length: GRID }, (_, col) => {
             const pieces = piecesAtCell(allPieces, row, col);
@@ -211,64 +235,60 @@ export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Pr
 
             const cx = col * CELL + CELL / 2;
             const cy = row * CELL + CELL / 2;
-            const spread = pieces.length > 1 ? 10 : 0;
+            const spread = pieces.length > 1 ? 9 : 0;
             const offsets = pawnOffsets(pieces.length);
             const r =
-              pieces.length === 1
-                ? 14
-                : pieces.length === 2
-                ? 11
-                : pieces.length === 3
-                ? 9
-                : 8;
+              pieces.length === 1 ? 13
+              : pieces.length === 2 ? 10.5
+              : pieces.length === 3 ? 9
+              : 8;
 
             return pieces.map((piece, i) => {
-              const key = `${piece.color}:${piece.id}`;
-              const isMovable = movablePieceIds.has(key);
+              const idKey = `${piece.color}:${piece.id}`;
+              const isMovable = movablePieceIds.has(idKey);
               const px = cx + offsets[i][0] * spread;
               const py = cy + offsets[i][1] * spread;
 
               return (
                 <g
-                  key={`pawn-${key}`}
+                  key={`pawn-${idKey}`}
                   style={{ cursor: isMovable ? 'pointer' : 'default' }}
                   onClick={isMovable ? () => onPieceTap?.(piece) : undefined}
                 >
-                  {/* Glow ring for movable pieces */}
                   {isMovable && (
                     <circle
                       cx={px}
                       cy={py}
-                      r={r + 5}
-                      fill="rgba(255,215,0,0.4)"
-                      stroke="#FFD700"
-                      strokeWidth={2}
+                      r={r + 6}
+                      fill={`${SECONDARY}55`}
+                      stroke={SECONDARY}
+                      strokeWidth={2.5}
                       style={{ animation: 'pulse 1s ease-in-out infinite' }}
                       pointerEvents="none"
                     />
                   )}
-                  <circle
-                    cx={px}
-                    cy={py}
-                    r={r}
-                    fill={COLOR_MAP[piece.color]}
-                    stroke="#fff"
-                    strokeWidth={2}
-                  />
-                  <text
-                    x={px}
-                    y={py + 4}
-                    textAnchor="middle"
-                    fontSize={9}
-                    fill="#fff"
-                    fontWeight="bold"
-                    pointerEvents="none"
-                  >
-                    {piece.id + 1}
-                  </text>
+                  <Pawn cx={px} cy={py} r={r} color={COLOR_MAP[piece.color]} />
                 </g>
               );
             });
+          })
+        )}
+
+        {/* ── Layer 4: stack-count badges ── */}
+        {Array.from({ length: GRID }, (_, row) =>
+          Array.from({ length: GRID }, (_, col) => {
+            const pieces = piecesAtCell(allPieces, row, col);
+            if (pieces.length < 2) return null;
+            const bx = col * CELL + CELL * 0.78;
+            const by = row * CELL + CELL * 0.22;
+            return (
+              <g key={`badge-${row}-${col}`} pointerEvents="none">
+                <circle cx={bx} cy={by} r={7} fill="#fff" stroke="rgba(0,0,0,0.4)" strokeWidth={1} />
+                <text x={bx} y={by + 3.2} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#1c1b1f">
+                  {pieces.length}
+                </text>
+              </g>
+            );
           })
         )}
       </svg>
