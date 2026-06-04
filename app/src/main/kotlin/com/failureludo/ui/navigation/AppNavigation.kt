@@ -1,14 +1,9 @@
 package com.failureludo.ui.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -20,12 +15,14 @@ import com.failureludo.ui.screens.GameBoardScreen
 import com.failureludo.ui.screens.GameSetupScreen
 import com.failureludo.ui.screens.HistoryScreen
 import com.failureludo.ui.screens.HomeScreen
+import com.failureludo.ui.screens.OnlineGameBoardScreen
 import com.failureludo.ui.screens.OnlineLobbyScreen
 import com.failureludo.ui.screens.WaitingRoomScreen
 import com.failureludo.ui.screens.WinScreen
 import com.failureludo.viewmodel.AuthState
 import com.failureludo.viewmodel.AuthViewModel
 import com.failureludo.viewmodel.GameViewModel
+import com.failureludo.viewmodel.OnlineGameViewModel
 import com.failureludo.viewmodel.OnlineLobbyViewModel
 import com.failureludo.viewmodel.WaitingRoomViewModel
 
@@ -35,6 +32,7 @@ fun AppNavigation(navController: NavHostController) {
     val authViewModel: AuthViewModel = viewModel()
     val onlineLobbyViewModel: OnlineLobbyViewModel = viewModel()
     val waitingRoomViewModel: WaitingRoomViewModel = viewModel()
+    val onlineGameViewModel: OnlineGameViewModel = viewModel()
 
     val authState by authViewModel.authState.collectAsState()
     val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
@@ -152,11 +150,22 @@ fun AppNavigation(navController: NavHostController) {
         composable(
             route = Screen.OnlineGame.route,
             arguments = listOf(navArgument("roomId") { type = NavType.StringType })
-        ) {
-            // Phase 4 placeholder
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Online game coming in Phase 4")
-            }
+        ) { backStackEntry ->
+            val roomId = backStackEntry.arguments?.getString("roomId") ?: return@composable
+            OnlineGameBoardScreen(
+                roomId    = roomId,
+                viewModel = onlineGameViewModel,
+                onGameOver = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.OnlineGame.route) { inclusive = true }
+                    }
+                },
+                onQuit = {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                }
+            )
         }
 
         composable(Screen.Win.route) {

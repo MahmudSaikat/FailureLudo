@@ -194,6 +194,61 @@ class OnlineGameRepository {
         )
     }
 
+    // ── Move sync (Phase 4) ───────────────────────────────────────────────────
+
+    suspend fun fetchRoom(roomId: String): Result<GameRoom> {
+        return try {
+            val doc = rooms.document(roomId).get().await()
+            val data = doc.data ?: return Result.failure(Exception("Room not found"))
+            Result.success(docToRoom(roomId, data))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun writeMove(roomId: String, move: OnlineMove): Result<Unit> {
+        return try {
+            val data = mapOf(
+                "index"          to move.index,
+                "actorId"        to move.actorId,
+                "movingPlayerId" to move.movingPlayerId,
+                "diceValue"      to move.diceValue,
+                "pieceId"        to move.pieceId,
+                "deferHomeEntry" to move.deferHomeEntry
+            )
+            rooms.document(roomId)
+                .collection("moves")
+                .document(move.index.toString())
+                .set(data)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun listenToMoves(roomId: String): Flow<List<OnlineMove>> = callbackFlow {
+        val reg = rooms.document(roomId)
+            .collection("moves")
+            .orderBy("index")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                val moves = snapshot.documents.mapNotNull { doc ->
+                    val d = doc.data ?: return@mapNotNull null
+                    OnlineMove(
+                        index          = (d["index"] as? Long)?.toInt() ?: return@mapNotNull null,
+                        actorId        = (d["actorId"] as? Long)?.toInt() ?: return@mapNotNull null,
+                        movingPlayerId = (d["movingPlayerId"] as? Long)?.toInt() ?: return@mapNotNull null,
+                        diceValue      = (d["diceValue"] as? Long)?.toInt() ?: return@mapNotNull null,
+                        pieceId        = (d["pieceId"] as? Long)?.toInt() ?: return@mapNotNull null,
+                        deferHomeEntry = d["deferHomeEntry"] as? Boolean ?: false
+                    )
+                }
+                trySend(moves)
+            }
+        awaitClose { reg.remove() }
+    }
+
     /** Generates a 6-char code using unambiguous characters, retrying until unique. */
     private suspend fun generateUniqueCode(): String {
         val chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
