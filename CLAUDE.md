@@ -7,7 +7,8 @@ Native Android Ludo game (Kotlin + Jetpack Compose). Pure deterministic game eng
 
 ## Active work
 **Online multiplayer** — see `plans/007-online-multiplayer-plan.md` for the full checklist.
-Currently on: Phase 5 (React web frontend). Phases 1–4 complete.
+Currently on: Phase 6 (random matchmaking). Phases 1–5 complete.
+One remaining Phase 5 task: register web app in Firebase console → get `appId` → add to `ludo-web/.env.local` → deploy.
 
 ## Key decisions
 - Firebase backend (managed, no server), React web frontend

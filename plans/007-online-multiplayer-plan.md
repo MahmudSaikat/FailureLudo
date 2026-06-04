@@ -134,28 +134,29 @@ A move = append to `moves[]`. All clients apply moves to their local determinist
 ---
 
 ## Phase 5 — React web app
-- [ ] Bootstrap: `npx create-react-app ludo-web --template typescript` in project root
-- [ ] Add Firebase Web SDK: `npm install firebase`
-- [ ] Initialize Firebase app with same project credentials (web app config from Firebase console)
-- [ ] Create `firebase.ts` — initialize app, export `db` (Firestore) and `auth`
-- [ ] **Auth screens** (mirrors Android Phase 2):
-  - [ ] Google Sign-In button
-  - [ ] "Play as Guest" button
-  - [ ] Same anonymous auth + profile write logic
-- [ ] **Lobby screen** (mirrors Android Phase 3):
-  - [ ] Create Room / Join Room / Find Match buttons
-  - [ ] WaitingRoom component with share link
-- [ ] **Game board** (new, no existing code to reuse):
-  - [ ] Draw board on HTML Canvas or SVG
-  - [ ] Replicate board layout: 15×15 grid, safe squares, home columns, center
-  - [ ] Pawn components with platform badges
-  - [ ] Firestore listener drives board state (same move-relay logic as Android)
-  - [ ] Disable controls when not local player's turn
-- [ ] **Spectator mode:**
-  - [ ] If all player slots are taken when user opens game URL → set `isSpectator = true`
-  - [ ] Spectators see the board updating but have no controls
-  - [ ] Show spectator count on screen
-- [ ] Deploy to Firebase Hosting: `firebase deploy --only hosting`
+- [x] Bootstrap: Vite + React + TypeScript (`ludo-web/`)
+- [x] Add Firebase Web SDK: `npm install firebase`
+- [ ] Register web app in Firebase console → get `appId` → add to `ludo-web/.env.local`
+- [x] Create `firebase.ts` — initialize app, export `db` (Firestore) and `auth`
+- [x] **Auth screens** (mirrors Android Phase 2):
+  - [x] Google Sign-In button
+  - [x] "Play as Guest" button
+  - [x] Same anonymous auth + profile write logic
+- [x] **Lobby screen** (mirrors Android Phase 3):
+  - [x] Create Room / Join Room buttons
+  - [x] WaitingRoom component with share link (copies spectator game URL)
+- [x] **Game board** (new, no existing code to reuse):
+  - [x] Draw board on SVG
+  - [x] Replicate board layout: 15×15 grid, safe squares, home columns, center
+  - [x] Pawn components with platform badges
+  - [x] Firestore listener drives board state (same move-relay logic as Android)
+  - [x] Disable controls when not local player's turn
+- [x] **Spectator mode:**
+  - [x] If user is not in room when opening game URL → set `isSpectator = true`
+  - [x] `?spectate=1` query param also forces spectator mode (for share links)
+  - [x] Spectators see the board updating but have no controls
+  - [ ] Show spectator count on screen (deferred)
+- [ ] Deploy to Firebase Hosting: `npx firebase-tools deploy --only hosting` (needs `firebase login` first)
 - [ ] Connect custom domain in Firebase Hosting console
 
 ---
