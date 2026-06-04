@@ -23,6 +23,7 @@ fun HomeScreen(
     onResume: () -> Unit,
     onHistory: () -> Unit,
     onSignIn: () -> Unit,
+    onPlayOnline: () -> Unit,
     hasActiveGame: Boolean,
     hasHistoryRecords: Boolean,
     isSessionRestored: Boolean,
@@ -192,6 +193,21 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
+
+            // Play Online button
+            OutlinedButton(
+                onClick = onPlayOnline,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
+            ) {
+                Text(
+                    text = "Play Online",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
 
             Spacer(modifier = Modifier.height(32.dp))

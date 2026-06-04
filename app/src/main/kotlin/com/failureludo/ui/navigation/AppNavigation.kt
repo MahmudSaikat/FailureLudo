@@ -1,27 +1,40 @@
 package com.failureludo.ui.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import com.failureludo.ui.screens.AuthScreen
 import com.failureludo.ui.screens.GameBoardScreen
 import com.failureludo.ui.screens.GameSetupScreen
 import com.failureludo.ui.screens.HistoryScreen
 import com.failureludo.ui.screens.HomeScreen
+import com.failureludo.ui.screens.OnlineLobbyScreen
+import com.failureludo.ui.screens.WaitingRoomScreen
 import com.failureludo.ui.screens.WinScreen
 import com.failureludo.viewmodel.AuthState
 import com.failureludo.viewmodel.AuthViewModel
 import com.failureludo.viewmodel.GameViewModel
+import com.failureludo.viewmodel.OnlineLobbyViewModel
+import com.failureludo.viewmodel.WaitingRoomViewModel
 
 @Composable
 fun AppNavigation(navController: NavHostController) {
     val gameViewModel: GameViewModel = viewModel()
     val authViewModel: AuthViewModel = viewModel()
+    val onlineLobbyViewModel: OnlineLobbyViewModel = viewModel()
+    val waitingRoomViewModel: WaitingRoomViewModel = viewModel()
 
     val authState by authViewModel.authState.collectAsState()
     val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
@@ -51,10 +64,11 @@ fun AppNavigation(navController: NavHostController) {
         composable(Screen.Home.route) {
             val profile = (authState as? AuthState.SignedIn)?.profile
             HomeScreen(
-                onNewGame         = { navController.navigate(Screen.Setup.route) },
-                onResume          = { navController.navigate(Screen.Game.route) },
-                onHistory         = { navController.navigate(Screen.History.route) },
-                onSignIn          = {
+                onNewGame     = { navController.navigate(Screen.Setup.route) },
+                onResume      = { navController.navigate(Screen.Game.route) },
+                onHistory     = { navController.navigate(Screen.History.route) },
+                onPlayOnline  = { navController.navigate(Screen.OnlineLobby.route) },
+                onSignIn      = {
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
@@ -104,6 +118,45 @@ fun AppNavigation(navController: NavHostController) {
                     }
                 }
             )
+        }
+
+        composable(Screen.OnlineLobby.route) {
+            OnlineLobbyScreen(
+                viewModel   = onlineLobbyViewModel,
+                onBack      = { navController.popBackStack() },
+                onRoomReady = { room ->
+                    navController.navigate(Screen.WaitingRoom.route(room.id)) {
+                        popUpTo(Screen.OnlineLobby.route)
+                    }
+                }
+            )
+        }
+
+        composable(
+            route = Screen.WaitingRoom.route,
+            arguments = listOf(navArgument("roomId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val roomId = backStackEntry.arguments?.getString("roomId") ?: return@composable
+            WaitingRoomScreen(
+                roomId          = roomId,
+                viewModel       = waitingRoomViewModel,
+                onGameStarting  = { id ->
+                    navController.navigate(Screen.OnlineGame.route(id)) {
+                        popUpTo(Screen.WaitingRoom.route)
+                    }
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            route = Screen.OnlineGame.route,
+            arguments = listOf(navArgument("roomId") { type = NavType.StringType })
+        ) {
+            // Phase 4 placeholder
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Online game coming in Phase 4")
+            }
         }
 
         composable(Screen.Win.route) {
