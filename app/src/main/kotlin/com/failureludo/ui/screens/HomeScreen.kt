@@ -3,6 +3,8 @@ package com.failureludo.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -12,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.failureludo.data.auth.UserProfile
 import com.failureludo.ui.theme.*
 
 @Composable
@@ -19,9 +22,11 @@ fun HomeScreen(
     onNewGame: () -> Unit,
     onResume: () -> Unit,
     onHistory: () -> Unit,
+    onSignIn: () -> Unit,
     hasActiveGame: Boolean,
     hasHistoryRecords: Boolean,
-    isSessionRestored: Boolean
+    isSessionRestored: Boolean,
+    userProfile: UserProfile?
 ) {
     Box(
         modifier = Modifier
@@ -29,6 +34,41 @@ fun HomeScreen(
             .background(Background),
         contentAlignment = Alignment.Center
     ) {
+        // User chip — top-right corner
+        userProfile?.let { profile ->
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 48.dp, end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PhoneAndroid,
+                    contentDescription = "Android",
+                    tint = Secondary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = profile.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Secondary
+                )
+                if (profile.isGuest) {
+                    TextButton(
+                        onClick = onSignIn,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = "Sign in",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Primary
+                        )
+                    }
+                }
+            }
+        }
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp),
