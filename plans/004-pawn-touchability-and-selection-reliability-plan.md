@@ -124,6 +124,14 @@ Policy:
    - If still tied, prefer deterministic id ordering.
 5. If unresolved and same-cell stacked ambiguity remains, route to existing chooser.
 
+Chooser triggers (decision required):
+- Show a chooser only when multiple distinct move meanings remain after the policy filters (different piece color/identity, pair vs single, or enter vs keep circulating).
+- Team safe-square stack with multiple movable colors -> color chooser (for example, "Move Red" vs "Move Yellow").
+- Team mixed-color tied pair on non-safe cells -> no color chooser; treat as a single pair meaning.
+- Triple stack where both a locked pair and top single are legal -> chooser for "Move pair" vs "Move single".
+- Team mixed-color triple stack with legal pair + single -> chooser for "Move pair" vs "Move single"; color labels only for distinct single-color options.
+- Home-entry deferral prompt appears when a selected pawn can either enter home/finish or keep circulating.
+
 Tasks:
 - [x] Implement deterministic ranking with stable ordering.
 - [x] Preserve existing 3-piece same-color stack chooser behavior.

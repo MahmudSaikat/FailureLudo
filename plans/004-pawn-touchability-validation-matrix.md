@@ -127,6 +127,37 @@ Expected:
 - Visual hierarchy is deterministic and understandable.
 - Stack badge remains readable and not occluded.
 
+### S12 - Team safe-square mixed-color chooser
+Steps:
+1. In TEAM mode, place two teammate colors on a safe square (for example, index 0).
+2. Ensure both colors are movable for the roll and tap the stack.
+3. Repeat with only one color movable.
+Expected:
+- When both are movable, a color chooser appears with both options.
+- When only one is movable, auto-select without a chooser.
+
+### S13 - Team mixed-color locked pair on non-safe cell
+Steps:
+1. In TEAM mode, place two teammate colors on a non-safe, non-entry main-track cell.
+2. Use an even roll so the locked pair is the legal move.
+Expected:
+- No color chooser appears; the pair move is treated as a single meaning.
+
+### S14 - Team mixed-color triple stack (pair + single)
+Steps:
+1. Create a mixed-color tied pair with a same-team top single on a non-safe cell.
+2. Ensure both pair and single are legal for the roll.
+Expected:
+- Chooser appears with "Move pair" and "Move single" options.
+
+### S15 - Home-entry deferral prompt
+Steps:
+1. Select a pawn that can enter home or finish exactly.
+2. Choose both "Enter" and "Keep circulating" options in separate attempts.
+Expected:
+- Prompt appears when entry is possible.
+- Each option moves the pawn to the correct destination.
+
 ## Accessibility Checks
 - Run Android Accessibility Scanner on game board screen.
 - Verify no critical touch-target warnings on interactive controls.

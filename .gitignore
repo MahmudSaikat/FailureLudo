@@ -8,6 +8,10 @@
 **/.cxx/
 **/.externalNativeBuild/
 local.properties
+google-services.json
+*.keystore
+*.jks
+*.p12
 app/release/
 .DS_Store
 Thumbs.db

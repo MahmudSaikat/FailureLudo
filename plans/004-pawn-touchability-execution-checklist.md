@@ -42,6 +42,7 @@ Exit criteria:
 - [x] Add deterministic id tie-break fallback.
 - [x] Route unresolved same-cell ambiguity to existing chooser.
 - [x] Validate safe-square and lock behavior consistency.
+- [ ] Verify chooser triggers for team safe-square stacks, mixed-color triple stacks, and home-entry deferral prompt.
 
 Exit criteria:
 - Ambiguous taps are deterministic.
