@@ -123,6 +123,49 @@ validate on a device, not fixed requirements.
 Use a distinct roll event to trigger dice animation, including repeated equal results.
 The final die face comes from the engine. Animation must never select or modify the outcome.
 
+### Dice appearance and roll choreography
+
+Give the die a physical identity: rounded bevels, recessed dark pips, consistent face numbering,
+and a soft contact shadow. A shallow tray carries the active player's accent color while the
+face remains easy to read. Keep the touch area comfortably larger than the artwork, targeting
+at least 48 dp. This is proposed art direction, pending the gameplay prototype.
+
+Recommended standard roll: approximately 600 ms, with these prototype timings:
+
+| Phase | Timeline after an accepted roll | Treatment |
+| --- | --- | --- |
+| Lift | 0–80 ms | Die rises slightly; shadow softens and separates |
+| Tumble | 80–380 ms | A few rotations with coherent visible faces and a short rattle |
+| Impact and bounce | 380–500 ms | Contact with the tray, one diminishing rebound, synchronized contact sound |
+| Settle | 500–600 ms | Small final wobble, stable result, crisp contact shadow |
+| Result hold | Until selection or automatic handoff | Final pips remain readable and attributed to the player who rolled |
+
+On initial touch, show immediate press feedback. A canceled gesture restores the ready state.
+The accepted roll starts the sequence once; rapid taps cannot create additional rolls.
+
+- Prototype a lightweight projected cube with coherent faces and lighting. Consider a dedicated
+  3D die only if the chosen appearance needs it; a full 3D board is not required.
+- Author several equally short tumble paths, with variation independent of the result. Finish
+  in an orientation that exposes the engine's chosen value; do not settle on the wrong face
+  and then replace its pips.
+- Keep pre-landing motion, sound, and duration from revealing the outcome early. Extra-roll
+  feedback follows the settled result and actual rules, including no-move and third-six cases.
+- Keep the animation inside the tray so it never obscures pawns or changes the layout.
+- Distinguish ready, rolling, and settled states. Use a quiet ready marker rather than a perpetual bounce.
+- Synchronize a single main haptic contact with landing instead of vibrating throughout the roll.
+- Preserve the result long enough to read before automatic no-move/forfeit handoff. Explain the
+  reason in the status area. Clear or attribute the previous result when changing players.
+- Trigger every roll from its event identity, including consecutive equal values. Animation
+  presents the result; it does not determine probability or change the game outcome.
+- Offer a quick roll of roughly 300–350 ms and a reduced-motion fade/settle transition.
+  Timing choices do not alter rules or skip player decisions.
+- Announce only the settled value and next action to accessibility services, not transient faces.
+
+First dice deliverable: an on-device study showing all six results, repeated results, bot rolls,
+standard/quick/reduced motion, and sound on/off. Check rapid taps, undo/replay, interruptions,
+no-move rolls, third-six forfeits, and a long sequence of rolls for fatigue. Judge touch response,
+readability, and audiovisual synchronization before integrating the final die into a full game.
+
 Pawns travel continuously between coordinates. A tied pair moves as a group. Capture effects
 happen at contact, and sound follows the visible action. Long returns can accelerate so they
 do not make the player wait through an entire track again.
@@ -152,6 +195,42 @@ Use short, purposeful haptics for roll contact, capture, and victory. Music is o
 lower priority than getting effects right; start with it off if added.
 Ship all assets locally. Validate on a phone speaker, headphones, muted audio, and disabled haptics.
 Use assets with clear redistribution rights; record their sources or creation provenance.
+
+### Concrete sound sourcing plan
+
+Use real recordings for physical contacts and original synthesized tones for short musical/UI
+cues. No specific recordings have been selected, downloaded, or auditioned yet.
+
+| Sound family | Proposed source and preparation |
+| --- | --- |
+| Dice tumble and landing | CC0 recordings of actual dice on a suitable surface; separate tumble and contact for precise timing |
+| Pawn steps and capture | A consistent family of dry wood/plastic contacts, with a few subtle variants |
+| Finish, extra roll, interface, victory | Original synthesized cues sharing one tonal palette; compare compatible CC0 alternatives if needed |
+
+Start with [Freesound](https://freesound.org/help/faq/), filtering specifically for CC0 and checking
+each asset page. Its catalog contains several different licenses, and original-file downloads
+normally require an account. If acquisition needs user access, provide a shortlist or choose
+another verified source. The installed game will never need that account or a sound-library API.
+
+[CC0](https://creativecommons.org/publicdomain/zero/1.0/) allows copying, modification, and
+commercial distribution without copyright attribution requirements. Retain source/creator
+metadata anyway. CC-BY is an alternative when its attribution requirements are handled;
+noncommercial-only assets are not the default for a potentially commercial release.
+
+[Mixkit's sound-effects license](https://mixkit.co/license/modal/sfxFree/) allows commercial
+video-game use but prohibits redistribution with source files or as standalone stock. It is
+therefore not the default for audio files committed to this repository. Any selected license
+must support both the app release and our actual asset-distribution workflow.
+
+For original synthesized cues, retain the generator and parameters. For sourced audio, record
+the exact asset URL, creator, license/version, retrieval date, and edits in an audio manifest.
+Library/licensing references above were checked on 2026-09-23; verify the chosen asset terms
+when acquiring files.
+
+Shortlist two or three candidates for dice, pawn, and capture sounds. Compare them at matched
+perceived loudness alongside the animation. Select one coherent set, trim silence, balance
+levels, and bundle the finished files locally. Physical materials should sound consistent with
+the artwork. The user should hear the candidate pack before it becomes the final soundtrack.
 
 ## 7. Supporting offline screens
 
