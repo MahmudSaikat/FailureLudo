@@ -55,5 +55,6 @@ wholesale. Only inspect shared dependencies as needed to make the Android releas
 ## Current handoff
 
 Scope is confirmed; the redesign has not been implemented and no visual style has been approved.
+A fresh design proposal is recorded in [plan 010](010-offline-android-fresh-design-plan.md).
 The previous web/online UI review is outside this effort. The next design task is the native Android
 board/game-screen direction, followed by the offline presentation rebuild.

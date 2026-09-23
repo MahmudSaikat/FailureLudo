@@ -7,7 +7,8 @@ Native Android Ludo game (Kotlin + Jetpack Compose). Pure deterministic game eng
 
 ## Active work
 **Offline Android redesign and release** on `feat/offline-improvements`.
-Read [the branch goal](plans/009-offline-android-redesign-goal.md) before planning or implementation.
+Read [the branch goal](plans/009-offline-android-redesign-goal.md) and
+[the fresh design proposal](plans/010-offline-android-fresh-design-plan.md) before planning or implementation.
 
 The immediate goal is to rebuild and polish the native Android offline experience, release it,
 and play it before returning to online development. This is a complete presentation redesign:
@@ -43,3 +44,4 @@ GameEngine stays pure/local. Network layer feeds opponent moves into it via Fire
 - 007: online multiplayer (paused)
 - 008: web/native parity (paused)
 - 009: offline Android redesign and release (current goal)
+- 010: fresh offline Android design plan (proposal; visual direction pending)
