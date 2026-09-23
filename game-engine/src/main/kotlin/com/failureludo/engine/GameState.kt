@@ -3,7 +3,7 @@ package com.failureludo.engine
 /** Represents a single dice roll result with any bonus context. */
 data class DiceResult(
     val value: Int,
-    val rollCount: Int = 1  // consecutive rolls in a single turn (three 6s = forfeit)
+    val rollCount: Int = if (value == 6) 1 else 0  // consecutive sixes in this turn; non-six rolls reset to zero
 )
 
 /** Phase within a turn. */

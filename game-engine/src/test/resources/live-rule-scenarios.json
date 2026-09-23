@@ -1,0 +1,1561 @@
+[
+  {
+    "name": "RED pair stays locked before its queue and enters together",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T50"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T50"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {
+          "phase": "NO_MOVES_AVAILABLE"
+        }
+      },
+      {
+        "skip": true
+      }
+    ],
+    "currentColor": "RED",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "RED:0",
+          "dice": 1,
+          "result": false,
+          "defer": false
+        },
+        {
+          "piece": "RED:0",
+          "dice": 2,
+          "result": true,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "RED pair enters queue at half distance and unlocks",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T50"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T50"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "H2",
+            "RED:1": "H2"
+          },
+          "pairs": {
+            "RED:0": null,
+            "RED:1": null
+          }
+        }
+      }
+    ],
+    "currentColor": "RED"
+  },
+  {
+    "name": "BLUE pair stays locked before its queue and enters together",
+    "pieces": [
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T11"
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T11"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {
+          "phase": "NO_MOVES_AVAILABLE"
+        }
+      },
+      {
+        "skip": true
+      }
+    ],
+    "currentColor": "BLUE",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "BLUE:0",
+          "dice": 1,
+          "result": false,
+          "defer": false
+        },
+        {
+          "piece": "BLUE:0",
+          "dice": 2,
+          "result": true,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "BLUE pair enters queue at half distance and unlocks",
+    "pieces": [
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T11"
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T11"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "BLUE:0",
+        "expect": {
+          "positions": {
+            "BLUE:0": "H2",
+            "BLUE:1": "H2"
+          },
+          "pairs": {
+            "BLUE:0": null,
+            "BLUE:1": null
+          }
+        }
+      }
+    ],
+    "currentColor": "BLUE"
+  },
+  {
+    "name": "YELLOW pair stays locked before its queue and enters together",
+    "pieces": [
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T24"
+      },
+      {
+        "color": "YELLOW",
+        "id": 1,
+        "position": "T24"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {
+          "phase": "NO_MOVES_AVAILABLE"
+        }
+      },
+      {
+        "skip": true
+      }
+    ],
+    "currentColor": "YELLOW",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "YELLOW:0",
+          "dice": 1,
+          "result": false,
+          "defer": false
+        },
+        {
+          "piece": "YELLOW:0",
+          "dice": 2,
+          "result": true,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "YELLOW pair enters queue at half distance and unlocks",
+    "pieces": [
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T24"
+      },
+      {
+        "color": "YELLOW",
+        "id": 1,
+        "position": "T24"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "YELLOW:0",
+        "expect": {
+          "positions": {
+            "YELLOW:0": "H2",
+            "YELLOW:1": "H2"
+          },
+          "pairs": {
+            "YELLOW:0": null,
+            "YELLOW:1": null
+          }
+        }
+      }
+    ],
+    "currentColor": "YELLOW"
+  },
+  {
+    "name": "GREEN pair stays locked before its queue and enters together",
+    "pieces": [
+      {
+        "color": "GREEN",
+        "id": 0,
+        "position": "T37"
+      },
+      {
+        "color": "GREEN",
+        "id": 1,
+        "position": "T37"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {
+          "phase": "NO_MOVES_AVAILABLE"
+        }
+      },
+      {
+        "skip": true
+      }
+    ],
+    "currentColor": "GREEN",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "GREEN:0",
+          "dice": 1,
+          "result": false,
+          "defer": false
+        },
+        {
+          "piece": "GREEN:0",
+          "dice": 2,
+          "result": true,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "GREEN pair enters queue at half distance and unlocks",
+    "pieces": [
+      {
+        "color": "GREEN",
+        "id": 0,
+        "position": "T37"
+      },
+      {
+        "color": "GREEN",
+        "id": 1,
+        "position": "T37"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "GREEN:0",
+        "expect": {
+          "positions": {
+            "GREEN:0": "H2",
+            "GREEN:1": "H2"
+          },
+          "pairs": {
+            "GREEN:0": null,
+            "GREEN:1": null
+          }
+        }
+      }
+    ],
+    "currentColor": "GREEN"
+  },
+  {
+    "name": "Pair retains identity when landing on an older single",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T3",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T3",
+        "lastMovedAt": 3
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "T5",
+        "lastMovedAt": 1
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T5",
+            "RED:1": "T5",
+            "RED:2": "T5"
+          },
+          "pairs": {
+            "RED:0": "RED:0|RED:1",
+            "RED:1": "RED:0|RED:1",
+            "RED:2": null
+          },
+          "legal": [
+            {
+              "piece": "RED:0",
+              "dice": 1,
+              "result": false,
+              "defer": false
+            },
+            {
+              "piece": "RED:2",
+              "dice": 1,
+              "result": true,
+              "defer": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "Single landing on a pair stays independent",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T5",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T5",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "T4",
+        "lastMovedAt": 3
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:2",
+        "expect": {
+          "pairs": {
+            "RED:0": "RED:0|RED:1",
+            "RED:1": "RED:0|RED:1",
+            "RED:2": null
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Single capture precedes friendly bonding",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T5"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T4"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T5"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:1",
+        "expect": {
+          "positions": {
+            "BLUE:0": "BASE"
+          },
+          "pairs": {
+            "RED:0": "RED:0|RED:1",
+            "RED:1": "RED:0|RED:1"
+          },
+          "current": "RED",
+          "phase": "WAITING_FOR_ROLL"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Reinforcement captures a pair but preserves the protected top single",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T5"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T4"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T5",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T5",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "BLUE",
+        "id": 2,
+        "position": "T5",
+        "lastMovedAt": 3
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:1",
+        "expect": {
+          "positions": {
+            "BLUE:0": "BASE",
+            "BLUE:1": "BASE",
+            "BLUE:2": "T5"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "An enemy single cannot capture the independent pawn on a friendly pair",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T4"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T5",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T5",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "BLUE",
+        "id": 2,
+        "position": "T5",
+        "lastMovedAt": 3
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "BLUE:0": "T5",
+            "BLUE:1": "T5",
+            "BLUE:2": "T5"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Pair captures only pair component and no single",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T3"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T3"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T5",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T5",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "BLUE",
+        "id": 2,
+        "position": "T5",
+        "lastMovedAt": 3
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "BLUE:0": "BASE",
+            "BLUE:1": "BASE",
+            "BLUE:2": "T5"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Fourth friendly pawn is illegal",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T5",
+        "lastMovedAt": 0
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T5",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "T5",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "RED",
+        "id": 3,
+        "position": "T4"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {
+          "notMovable": [
+            "RED:3"
+          ],
+          "movable": [
+            "RED:2"
+          ]
+        }
+      },
+      {
+        "move": "RED:3",
+        "expectError": true
+      }
+    ]
+  },
+  {
+    "name": "Arriving teammate pair cannot make four or five friendly pawns",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T3"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T3"
+      },
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T5"
+      },
+      {
+        "color": "YELLOW",
+        "id": 1,
+        "position": "T5"
+      }
+    ],
+    "steps": [],
+    "mode": "TEAM",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "RED:0",
+          "dice": 4,
+          "result": false,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "Arriving pair cannot make five friendly pawns",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T3"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T3"
+      },
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T5",
+        "lastMovedAt": 0
+      },
+      {
+        "color": "YELLOW",
+        "id": 1,
+        "position": "T5",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "YELLOW",
+        "id": 2,
+        "position": "T5",
+        "lastMovedAt": 2
+      }
+    ],
+    "steps": [],
+    "mode": "TEAM",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "RED:0",
+          "dice": 4,
+          "result": false,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "Team limit combines both friendly colors",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T4"
+      },
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T5"
+      },
+      {
+        "color": "YELLOW",
+        "id": 1,
+        "position": "T5"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T5"
+      }
+    ],
+    "steps": [],
+    "mode": "TEAM",
+    "initialExpect": {
+      "legal": [
+        {
+          "piece": "RED:0",
+          "dice": 1,
+          "result": false,
+          "defer": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "Safe squares allow four singles and no capture",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T8",
+        "lastMovedAt": 0
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T8",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "T8",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "RED",
+        "id": 3,
+        "position": "T7"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T8"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:3",
+        "expect": {
+          "positions": {
+            "RED:3": "T8",
+            "BLUE:0": "T8"
+          },
+          "pairs": {
+            "RED:0": null,
+            "RED:1": null,
+            "RED:2": null,
+            "RED:3": null
+          },
+          "legal": [
+            {
+              "piece": "RED:0",
+              "dice": 1,
+              "result": true,
+              "defer": false
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "Home queue allows four singles",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "H2"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "H2"
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "H2"
+      },
+      {
+        "color": "RED",
+        "id": 3,
+        "position": "H1"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:3",
+        "expect": {
+          "positions": {
+            "RED:3": "H2"
+          },
+          "pairs": {
+            "RED:0": null,
+            "RED:1": null,
+            "RED:2": null,
+            "RED:3": null
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Mixed pair preserves membership and cannot enter either queue",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T50"
+      },
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T50"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 2,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T51",
+            "YELLOW:0": "T51"
+          },
+          "pairs": {
+            "RED:0": "RED:0|YELLOW:0",
+            "YELLOW:0": "RED:0|YELLOW:0"
+          }
+        }
+      }
+    ],
+    "mode": "TEAM"
+  },
+  {
+    "name": "Landing on safe square unlocks a moving pair",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T5"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T5"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 6,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T8",
+            "RED:1": "T8"
+          },
+          "pairs": {
+            "RED:0": null,
+            "RED:1": null
+          }
+        }
+      },
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T9",
+            "RED:1": "T8"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Passing a safe square does not untie a pair",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T7"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T7"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T9",
+            "RED:1": "T9"
+          },
+          "pairs": {
+            "RED:0": "RED:0|RED:1",
+            "RED:1": "RED:0|RED:1"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Home choice rejects a circulating route crossing an enemy pair",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T51"
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T51"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {
+          "movable": [
+            "RED:0"
+          ],
+          "legal": [
+            {
+              "piece": "RED:0",
+              "dice": 4,
+              "result": false,
+              "defer": true
+            }
+          ]
+        }
+      },
+      {
+        "move": "RED:0",
+        "defer": true,
+        "expectError": true
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "H3"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Circulating route respects stack limit",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T51",
+        "lastMovedAt": 1
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "T51",
+        "lastMovedAt": 2
+      },
+      {
+        "color": "RED",
+        "id": 3,
+        "position": "T51",
+        "lastMovedAt": 3
+      }
+    ],
+    "steps": [
+      {
+        "roll": 2,
+        "expect": {
+          "legal": [
+            {
+              "piece": "RED:0",
+              "dice": 2,
+              "result": false,
+              "defer": true
+            }
+          ]
+        }
+      },
+      {
+        "move": "RED:0",
+        "defer": true,
+        "expectError": true
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "H1"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Single cannot cross barrier before home branch",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T50"
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T50"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 2,
+        "expect": {
+          "notMovable": [
+            "RED:0"
+          ],
+          "phase": "NO_MOVES_AVAILABLE"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Pair can jump another pair",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T3"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "T3"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T4"
+      },
+      {
+        "color": "BLUE",
+        "id": 1,
+        "position": "T4"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 4,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T5",
+            "RED:1": "T5",
+            "BLUE:0": "T4"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Red 49 roll 1 defer False",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "defer": false,
+        "expect": {
+          "positions": {
+            "RED:0": "T50"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Red 49 roll 2 defer False",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 2,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "defer": false,
+        "expect": {
+          "positions": {
+            "RED:0": "H1"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Red 49 roll 3 defer False",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 3,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "defer": false,
+        "expect": {
+          "positions": {
+            "RED:0": "H2"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Red 49 roll 2 defer True",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 2,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "defer": true,
+        "expect": {
+          "positions": {
+            "RED:0": "T51"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Red 49 roll 3 defer True",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T49"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 3,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "defer": true,
+        "expect": {
+          "positions": {
+            "RED:0": "T0"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Capture on two then two sixes does not forfeit",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T1"
+      },
+      {
+        "color": "BLUE",
+        "id": 0,
+        "position": "T3"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 2,
+        "expect": {
+          "count": 0
+        }
+      },
+      {
+        "move": "RED:0",
+        "expect": {}
+      },
+      {
+        "roll": 6,
+        "expect": {
+          "count": 1
+        }
+      },
+      {
+        "move": "RED:1",
+        "expect": {}
+      },
+      {
+        "roll": 6,
+        "expect": {
+          "count": 2,
+          "phase": "WAITING_FOR_PIECE_SELECTION",
+          "current": "RED"
+        }
+      },
+      {
+        "move": "RED:2",
+        "expect": {}
+      },
+      {
+        "roll": 6,
+        "expect": {
+          "current": "GREEN",
+          "phase": "WAITING_FOR_ROLL",
+          "positions": {
+            "BLUE:0": "BASE",
+            "RED:1": "T0",
+            "RED:2": "T0"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "Six with no legal move skips without bonus",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "H5"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "FINISHED"
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "FINISHED"
+      },
+      {
+        "color": "RED",
+        "id": 3,
+        "position": "FINISHED"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 6,
+        "expect": {
+          "phase": "NO_MOVES_AVAILABLE"
+        }
+      },
+      {
+        "skip": true,
+        "expect": {
+          "current": "GREEN",
+          "phase": "WAITING_FOR_ROLL"
+        }
+      }
+    ]
+  },
+  {
+    "name": "Sharing unlocks immediately for a mixed pair in the same turn",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T32"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 6,
+        "expect": {}
+      },
+      {
+        "move": "YELLOW:0",
+        "expect": {
+          "shared": [
+            0
+          ]
+        }
+      },
+      {
+        "roll": 6,
+        "expect": {
+          "movable": [
+            "RED:0",
+            "YELLOW:0"
+          ]
+        }
+      },
+      {
+        "move": "YELLOW:0",
+        "expect": {
+          "pairs": {
+            "RED:0": "RED:0|YELLOW:0",
+            "YELLOW:0": "RED:0|YELLOW:0"
+          }
+        }
+      },
+      {
+        "roll": 2,
+        "expect": {}
+      },
+      {
+        "move": "YELLOW:0",
+        "expect": {
+          "positions": {
+            "RED:0": "T33",
+            "YELLOW:0": "T33"
+          },
+          "shared": [
+            0
+          ]
+        }
+      }
+    ],
+    "mode": "TEAM",
+    "currentColor": "YELLOW",
+    "entered": [
+      "RED"
+    ]
+  },
+  {
+    "name": "A six moving an existing pawn does not mark first entry",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "T5"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 6,
+        "expect": {}
+      },
+      {
+        "move": "RED:0",
+        "expect": {
+          "shared": []
+        }
+      }
+    ],
+    "mode": "TEAM",
+    "entered": [
+      "YELLOW"
+    ]
+  },
+  {
+    "name": "Historical entry flags unlock even when earlier pawn was captured",
+    "pieces": [],
+    "steps": [
+      {
+        "roll": 6,
+        "expect": {}
+      },
+      {
+        "move": "YELLOW:0",
+        "expect": {
+          "shared": [
+            0
+          ]
+        }
+      },
+      {
+        "roll": 6,
+        "expect": {
+          "movable": [
+            "RED:0"
+          ]
+        }
+      }
+    ],
+    "mode": "TEAM",
+    "currentColor": "YELLOW",
+    "entered": [
+      "RED"
+    ]
+  },
+  {
+    "name": "Finished teammate can still roll for its partner",
+    "pieces": [
+      {
+        "color": "RED",
+        "id": 0,
+        "position": "FINISHED"
+      },
+      {
+        "color": "RED",
+        "id": 1,
+        "position": "FINISHED"
+      },
+      {
+        "color": "RED",
+        "id": 2,
+        "position": "FINISHED"
+      },
+      {
+        "color": "RED",
+        "id": 3,
+        "position": "FINISHED"
+      },
+      {
+        "color": "YELLOW",
+        "id": 0,
+        "position": "T5"
+      }
+    ],
+    "steps": [
+      {
+        "roll": 1,
+        "expect": {
+          "movable": [
+            "YELLOW:0"
+          ]
+        }
+      },
+      {
+        "move": "YELLOW:0",
+        "expect": {
+          "positions": {
+            "YELLOW:0": "T6"
+          }
+        }
+      }
+    ],
+    "mode": "TEAM",
+    "shared": [
+      0
+    ],
+    "entered": [
+      "RED",
+      "YELLOW"
+    ]
+  }
+]

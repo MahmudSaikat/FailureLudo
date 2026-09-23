@@ -57,36 +57,54 @@ function occupantsAtMainIndex(players: Player[], index: number): Occupant[] {
 }
 
 function topSingleRefForStack(stack: Occupant[]): PieceRef | null {
-  if (stack.length < 3) return null;
-  let top = stack[0];
-  for (const o of stack) {
-    if (
-      o.piece.lastMovedAt > top.piece.lastMovedAt ||
-      (o.piece.lastMovedAt === top.piece.lastMovedAt && colorIndex(o.color) > colorIndex(top.color)) ||
-      (o.piece.lastMovedAt === top.piece.lastMovedAt && colorIndex(o.color) === colorIndex(top.color) && o.piece.id > top.piece.id)
-    ) {
-      top = o;
-    }
-  }
-  return { color: top.color, pieceId: top.piece.id };
+  if (stack.length !== 3) return null;
+  const pair = doubleComponentRefsForStack(stack);
+  if (pair.size === 0) return null;
+  const single = stack.find(o => !pair.has(`${o.color}:${o.piece.id}`));
+  return single ? { color: single.color, pieceId: single.piece.id } : null;
 }
 
 function doubleComponentRefsForStack(stack: Occupant[]): Set<string> {
   if (stack.length < 2) return new Set();
-  if (stack.length === 2) {
-    return new Set(stack.map(o => `${o.color}:${o.piece.id}`));
+  const pos = stack[0].piece.position;
+  if (pos.type !== 'MainTrack' || isSafeSquare(pos.index)) return new Set();
+  const groups = new Map<string, Occupant[]>();
+  for (const o of stack) {
+    if (!o.piece.pairKey) continue;
+    const group = groups.get(o.piece.pairKey) ?? [];
+    group.push(o);
+    groups.set(o.piece.pairKey, group);
   }
-  const topSingle = topSingleRefForStack(stack);
-  const topKey = topSingle ? `${topSingle.color}:${topSingle.pieceId}` : null;
-  const candidates = stack
-    .filter(o => `${o.color}:${o.piece.id}` !== topKey)
-    .map(o => ({ ref: { color: o.color, pieceId: o.piece.id }, piece: o.piece }))
-    .sort((a, b) => {
-      if (a.piece.lastMovedAt !== b.piece.lastMovedAt) return a.piece.lastMovedAt - b.piece.lastMovedAt;
-      if (colorIndex(a.ref.color) !== colorIndex(b.ref.color)) return colorIndex(a.ref.color) - colorIndex(b.ref.color);
-      return a.ref.pieceId - b.ref.pieceId;
-    });
-  return new Set(candidates.slice(0, 2).map(c => `${c.ref.color}:${c.ref.pieceId}`));
+  // Legacy snapshots use the oldest-two convention until their next transition.
+  const pair = [...groups.values()].find(group => group.length === 2) ?? [...stack]
+    .sort((a, b) => a.piece.lastMovedAt - b.piece.lastMovedAt ||
+      colorIndex(a.color) - colorIndex(b.color) || a.piece.id - b.piece.id)
+    .slice(0, 2);
+  return new Set(pair.map(o => `${o.color}:${o.piece.id}`));
+}
+
+export function normalizePairs(players: Player[], mode: GameMode): Player[] {
+  const keys = new Map<string, string>();
+  const cells = new Set(players.filter(p => p.isActive).flatMap(p => p.pieces)
+    .flatMap(p => p.position.type === 'MainTrack' ? [p.position.index] : []));
+  for (const index of cells) {
+    const groups = new Map<number, Occupant[]>();
+    for (const o of occupantsAtMainIndex(players, index)) {
+      const side = sideKey(o.color, mode);
+      groups.set(side, [...(groups.get(side) ?? []), o]);
+    }
+    for (const stack of groups.values()) {
+      const pair = doubleComponentRefsForStack(stack);
+      if (pair.size !== 2) continue;
+      const members = stack.filter(o => pair.has(`${o.color}:${o.piece.id}`))
+        .sort((a, b) => colorIndex(a.color) - colorIndex(b.color) || a.piece.id - b.piece.id);
+      const key = members.map(o => `${o.color}:${o.piece.id}`).join('|');
+      for (const ref of pair) keys.set(ref, key);
+    }
+  }
+  return players.map(p => ({ ...p, pieces: p.pieces.map(pc => ({
+    ...pc, pairKey: keys.get(`${p.color}:${pc.id}`) ?? null,
+  })) }));
 }
 
 function ownStackAtIndex(index: number, movingColor: PlayerColor, players: Player[], mode: GameMode): Occupant[] {
@@ -114,10 +132,6 @@ function lockedPairRefsForPiece(piece: Piece, color: PlayerColor, players: Playe
   const selfKey = `${color}:${piece.id}`;
   if (!doubleRefs.has(selfKey)) return new Set();
   if (isSafeSquare(index)) return new Set();
-
-  const isMixedTeamPair = new Set(Array.from(doubleRefs).map(k => k.split(':')[0] as PlayerColor)).size > 1;
-  const homeColEntry = { RED: 50, BLUE: 11, YELLOW: 24, GREEN: 37 }[color];
-  if (!isMixedTeamPair && index === homeColEntry) return new Set();
 
   return doubleRefs;
 }
@@ -222,10 +236,17 @@ function crossesOpponentDoubleBarrier(
   return false;
 }
 
-export function canMove(piece: Piece, diceValue: number, color: PlayerColor, players: Player[], mode: GameMode): boolean {
-  if (piece.position.type === 'Finished') return false;
-  const destination = computeDestination(piece, diceValue, color, players, mode);
+export function canMove(piece: Piece, diceValue: number, color: PlayerColor, players: Player[], mode: GameMode, deferHomeEntry = false): boolean {
+  if (piece.position.type === 'Finished' || !Number.isInteger(diceValue) || diceValue < 1 || diceValue > 6) return false;
+  if (deferHomeEntry && !wouldEnterHomePath(piece, diceValue, players, mode)) return false;
+  const destination = computeDestination(piece, diceValue, color, players, mode, deferHomeEntry);
   if (!destination) return false;
+  if (destination.type === 'MainTrack' && !isSafeSquare(destination.index)) {
+    const moving = movingGroup(piece, players, mode);
+    const remaining = ownStackAtIndex(destination.index, color, players, mode)
+      .filter(o => !moving.has(`${o.color}:${o.piece.id}`)).length;
+    if (remaining + moving.size > 3) return false;
+  }
 
   if (piece.position.type === 'MainTrack' && !isMovingAsLockedDouble(piece, diceValue, color, players, mode)) {
     const eff = effectiveDiceValue(piece, diceValue, color, players, mode);
@@ -233,6 +254,21 @@ export function canMove(piece: Piece, diceValue: number, color: PlayerColor, pla
     if (crossesOpponentDoubleBarrier(piece.position.index, eff, color, destination, players, mode)) return false;
   }
   return true;
+}
+
+export function movingGroup(piece: Piece, players: Player[], mode: GameMode): Set<string> {
+  const pair = lockedPairRefsForPiece(piece, piece.color, players, mode);
+  return pair.size ? pair : new Set([`${piece.color}:${piece.id}`]);
+}
+
+export function wouldEnterHomePath(piece: Piece, diceValue: number, players: Player[], mode: GameMode): boolean {
+  if (piece.position.type !== 'MainTrack') return false;
+  const destination = computeDestination(piece, diceValue, piece.color, players, mode);
+  return destination?.type === 'HomeColumn' || destination?.type === 'Finished';
+}
+
+export function canDeferHomeEntry(piece: Piece, diceValue: number, players: Player[], mode: GameMode): boolean {
+  return canMove(piece, diceValue, piece.color, players, mode, true);
 }
 
 export function movablePiecesForTurn(
@@ -278,7 +314,7 @@ function pairCaptureTargetsOnEnemyDouble(
   const ownSinglesAtCell = occupantsAtMainIndex(players, destinationIndex).filter(
     o => isSameSide(movingColor, o.color, mode) && `${o.color}:${o.piece.id}` !== movingRefKey,
   );
-  if (ownSinglesAtCell.length === 0) return [];
+  if (ownSinglesAtCell.length !== 1) return [];
 
   const enemyDoubleTargets: CaptureTarget[] = [];
   for (const stack of enemyStacksAtIndex(destinationIndex, movingColor, players, mode)) {
@@ -316,9 +352,7 @@ export function captureTargets(
   }
 
   const pairCapture = pairCaptureTargetsOnEnemyDouble(piece, movingColor, destination.index, players, mode);
-  if (pairCapture.length > 0) return pairCapture;
-
-  return enemyStacks.flatMap(stack => {
+  return pairCapture.concat(enemyStacks.flatMap(stack => {
     const doubleRefs = doubleComponentRefsForStack(stack);
     const protectedTop = stack.length >= 3 ? topSingleRefForStack(stack) : null;
     const protectedKey = protectedTop ? `${protectedTop.color}:${protectedTop.pieceId}` : null;
@@ -326,7 +360,7 @@ export function captureTargets(
       .filter(o => !doubleRefs.has(`${o.color}:${o.piece.id}`))
       .filter(o => `${o.color}:${o.piece.id}` !== protectedKey)
       .map(o => ({ color: o.color, pieceId: o.piece.id }));
-  });
+  }));
 }
 
 export function applyMove(
@@ -338,31 +372,24 @@ export function applyMove(
   deferHomeEntry = false,
   movedAt = 0,
 ): Player[] {
-  const newPosition = computeDestination(piece, diceValue, color, players, mode, deferHomeEntry);
+  if (!canMove(piece, diceValue, color, players, mode, deferHomeEntry)) return players;
+  const bonded = normalizePairs(players, mode);
+  const movingPiece = bonded.find(p => p.color === color)!.pieces.find(p => p.id === piece.id)!;
+  const newPosition = computeDestination(movingPiece, diceValue, color, bonded, mode, deferHomeEntry);
   if (!newPosition) return players;
-
-  const locked = lockedPairRefsForPiece(piece, color, players, mode);
-  const selfKey = `${color}:${piece.id}`;
-  const movingAsDouble = locked.has(selfKey) && diceValue % 2 === 0;
-  const movingKeys = movingAsDouble ? locked : new Set([selfKey]);
-
-  const captures = captureTargets(piece, diceValue, color, players, mode, deferHomeEntry);
-  const captureMap = new Map<PlayerColor, Set<number>>();
-  for (const c of captures) {
-    if (!captureMap.has(c.color)) captureMap.set(c.color, new Set());
-    captureMap.get(c.color)!.add(c.pieceId);
-  }
-
-  return players.map(player => ({
+  const movingKeys = movingGroup(movingPiece, bonded, mode);
+  const captures = new Set(captureTargets(movingPiece, diceValue, color, bonded, mode, deferHomeEntry)
+    .map(c => `${c.color}:${c.pieceId}`));
+  const moved = bonded.map(player => ({
     ...player,
     pieces: player.pieces.map(p => {
       const key = `${player.color}:${p.id}`;
       if (movingKeys.has(key)) return { ...p, position: newPosition, lastMovedAt: movedAt };
-      const capturedIds = captureMap.get(player.color);
-      if (capturedIds?.has(p.id)) return { ...p, position: HomeBase };
+      if (captures.has(key)) return { ...p, position: HomeBase, pairKey: null };
       return p;
     }),
   }));
+  return normalizePairs(moved, mode);
 }
 
 export function checkWinner(players: Player[], mode: GameMode): number[] | null {

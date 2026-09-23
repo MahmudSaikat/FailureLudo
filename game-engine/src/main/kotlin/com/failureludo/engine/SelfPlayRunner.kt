@@ -91,7 +91,7 @@ object RandomSelfPlayPolicy : SelfPlayPolicy {
     override fun chooseMove(stateAfterRoll: GameState, random: Random): SelfPlayMoveDecision {
         val piece = stateAfterRoll.movablePieces.random(random)
         val diceValue = stateAfterRoll.lastDice?.value ?: 1
-        val canDefer = GameRules.wouldEnterHomePath(
+        val canDefer = GameRules.canDeferHomeEntry(
             piece = piece,
             diceValue = diceValue,
             color = piece.color,
@@ -164,7 +164,7 @@ object SelfPlayRunner {
                         HeuristicBotMoveSelector.choosePiece(rolled)
                     }
 
-                    val deferAllowed = GameRules.wouldEnterHomePath(
+                    val deferAllowed = GameRules.canDeferHomeEntry(
                         piece = chosenPiece,
                         diceValue = diceValue,
                         color = chosenPiece.color,

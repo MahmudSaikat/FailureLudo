@@ -14,6 +14,7 @@ import {
 import { colorIndex, teamIndex } from './board';
 import {
   applyMove,
+  canMove,
   captureTargets,
   checkWinner,
   computeDestination,
@@ -75,8 +76,8 @@ export function newGame(
 
 function rollDiceWithValue(state: GameState, diceValue: number): GameState {
   const player = currentPlayer(state);
-  const prevRollCount = state.lastDice?.rollCount ?? 0;
-  const newRollCount = diceValue === 6 ? prevRollCount + 1 : 1;
+  const prevRollCount = state.lastDice?.value === 6 ? state.lastDice.rollCount : 0;
+  const newRollCount = diceValue === 6 ? prevRollCount + 1 : 0;
 
   if (diceValue === 6 && newRollCount === 3) {
     const event: GameEvent = { type: 'ConsecutiveSixesForfeit', playerId: player.id, color: player.color };
@@ -102,17 +103,27 @@ function rollDiceWithValue(state: GameState, diceValue: number): GameState {
 }
 
 export function rollDice(state: GameState, forcedValue: number): GameState {
+  if (state.turnPhase !== 'WAITING_FOR_ROLL') throw new Error('Cannot roll in this phase');
+  if (!Number.isInteger(forcedValue) || forcedValue < 1 || forcedValue > 6) throw new Error('Dice must be 1..6');
   return rollDiceWithValue(state, forcedValue);
 }
 
 export function advanceNoMoves(state: GameState): GameState {
+  if (state.turnPhase !== 'NO_MOVES_AVAILABLE') throw new Error('Moves are still available');
   const player = currentPlayer(state);
   const event: GameEvent = { type: 'TurnSkipped', playerId: player.id, color: player.color };
   return advanceToNextTurn({ ...state, eventLog: [...state.eventLog, event] });
 }
 
 export function selectPiece(state: GameState, piece: Piece, deferHomeEntry = false): GameState {
+  if (state.turnPhase !== 'WAITING_FOR_PIECE_SELECTION') throw new Error('Cannot select in this phase');
+  const selected = state.movablePieces.find(p => p.color === piece.color && p.id === piece.id);
+  if (!selected) throw new Error('Piece is not movable');
+  piece = selected;
   const diceValue = state.lastDice!.value;
+  if (!canMove(piece, diceValue, piece.color, state.players, state.mode, deferHomeEntry)) {
+    throw new Error('Selected move route is not legal');
+  }
   const movingPlayer = state.players.find(p => p.color === piece.color)!;
   const actingPlayer = currentPlayer(state);
 
@@ -158,6 +169,7 @@ export function selectPiece(state: GameState, piece: Piece, deferHomeEntry = fal
     moveCounter: newMoveCounter,
     eventLog: [...state.eventLog, ...events],
     hasEnteredBoardAtLeastOnce: updatedEntered,
+    sharedTeamDiceEnabled: computeSharedTeamDiceEnabled({ ...state, hasEnteredBoardAtLeastOnce: updatedEntered }),
     movablePieces: [],
   };
 
@@ -189,8 +201,11 @@ export function selectPiece(state: GameState, piece: Piece, deferHomeEntry = fal
 }
 
 export function applyDeterministicTurn(state: GameState, input: DeterministicTurnInput): GameState {
+  if (currentPlayer(state).id !== input.actorId) throw new Error('Actor is not the current player');
   const rolled = rollDice(state, input.diceValue);
-  const movingPlayer = rolled.players.find(p => p.id === input.movingPlayerId)!;
+  if (rolled.turnPhase !== 'WAITING_FOR_PIECE_SELECTION') throw new Error('No selectable move');
+  const movingPlayer = rolled.players.find(p => p.id === input.movingPlayerId);
+  if (!movingPlayer) throw new Error('Moving player not found');
   const selectedPiece = rolled.movablePieces.find(
     p => p.color === movingPlayer.color && p.id === input.pieceId,
   );
@@ -198,7 +213,8 @@ export function applyDeterministicTurn(state: GameState, input: DeterministicTur
   return selectPiece(rolled, selectedPiece, input.deferHomeEntry);
 }
 
-export function applyDeterministicRollOnly(state: GameState, _actorId: number, diceValue: number): GameState {
+export function applyDeterministicRollOnly(state: GameState, actorId: number, diceValue: number): GameState {
+  if (currentPlayer(state).id !== actorId) throw new Error('Actor is not the current player');
   const rolled = rollDice(state, diceValue);
   if (rolled.turnPhase === 'NO_MOVES_AVAILABLE') return advanceNoMoves(rolled);
   if (rolled.turnPhase === 'WAITING_FOR_ROLL') return rolled; // consecutive-sixes forfeit
@@ -212,6 +228,7 @@ function advanceToNextTurn(state: GameState): GameState {
     currentPlayerIndex: nextIdx,
     turnPhase: 'WAITING_FOR_ROLL',
     lastDice: null,
+    movablePieces: [],
     sharedTeamDiceEnabled: computeSharedTeamDiceEnabled(state),
   };
 }

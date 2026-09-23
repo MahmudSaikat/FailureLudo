@@ -182,8 +182,10 @@ class GameSessionStore(private val context: Context) {
             "Unsupported game schema version: $schemaVersion"
         }
 
-        val players = json.getJSONArray("players").toObjectList { obj -> playerFromJson(obj) }
         val mode = GameMode.valueOf(json.getString("mode"))
+        val players = GameRules.normalizePairs(
+            json.getJSONArray("players").toObjectList { obj -> playerFromJson(obj) }, mode
+        )
         val moveCounter = if (json.has("moveCounter")) json.getLong("moveCounter") else 0L
         val currentPlayerIndex = json.getInt("currentPlayerIndex")
         val turnPhase = TurnPhase.valueOf(json.getString("turnPhase"))
@@ -202,6 +204,10 @@ class GameSessionStore(private val context: Context) {
         } else {
             emptySet()
         }
+        val restoredSharedTeamDiceEnabled = if (mode == GameMode.TEAM) {
+            sharedTeamDiceEnabled + players.filter { it.isActive }.groupBy { it.color.teamIndex }
+                .filterValues { team -> team.size == 2 && team.all { enteredBoardAtLeastOnce[it.id] == true } }.keys
+        } else emptySet()
         val rawMovablePieces = json.getJSONArray("movablePieces").toObjectList { obj -> pieceFromJson(obj) }
         val movablePieces = when {
             turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION &&
@@ -212,7 +218,7 @@ class GameSessionStore(private val context: Context) {
                     diceValue = lastDice.value,
                     allPlayers = players,
                     mode = mode,
-                    sharedTeamDiceEnabled = sharedTeamDiceEnabled
+                    sharedTeamDiceEnabled = restoredSharedTeamDiceEnabled
                 )
             }
             turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION -> rawMovablePieces
@@ -231,7 +237,7 @@ class GameSessionStore(private val context: Context) {
             lastDice = lastDice,
             diceByPlayer = diceByPlayer,
             hasEnteredBoardAtLeastOnce = enteredBoardAtLeastOnce,
-            sharedTeamDiceEnabled = sharedTeamDiceEnabled,
+            sharedTeamDiceEnabled = restoredSharedTeamDiceEnabled,
             movablePieces = movablePieces,
             winners = winners,
             eventLog = eventLog
@@ -285,6 +291,7 @@ class GameSessionStore(private val context: Context) {
             .put("color", piece.color.name)
             .put("position", piecePositionToJson(piece.position))
             .put("lastMovedAt", piece.lastMovedAt)
+            .put("pairKey", piece.pairKey ?: JSONObject.NULL)
     }
 
     private fun pieceFromJson(json: JSONObject): Piece {
@@ -292,7 +299,8 @@ class GameSessionStore(private val context: Context) {
             id = json.getInt("id"),
             color = PlayerColor.valueOf(json.getString("color")),
             position = piecePositionFromJson(json.getJSONObject("position")),
-            lastMovedAt = if (json.has("lastMovedAt")) json.getLong("lastMovedAt") else 0L
+            lastMovedAt = if (json.has("lastMovedAt")) json.getLong("lastMovedAt") else 0L,
+            pairKey = if (json.has("pairKey") && !json.isNull("pairKey")) json.getString("pairKey") else null
         )
     }
 
@@ -305,7 +313,7 @@ class GameSessionStore(private val context: Context) {
     private fun diceFromJson(json: JSONObject): DiceResult {
         return DiceResult(
             value = json.getInt("value"),
-            rollCount = json.getInt("rollCount")
+            rollCount = if (json.getInt("value") == 6) json.getInt("rollCount") else 0
         )
     }
 

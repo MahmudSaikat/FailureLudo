@@ -51,7 +51,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val UNDO_HISTORY_LIMIT = 12
         private const val FLN_VERSION = "1.0"
-        private const val RULESET_VERSION = "2026.04"
+        private const val RULESET_VERSION = "2026.09"
         private const val TURN_TRANSITION_PADDING_MS = 280L
         private const val BOT_ROLL_DELAY_MS = 320L
     }
@@ -474,6 +474,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val movingPlayer = state.players.first { it.color == piece.color }
+        if (!GameRules.canMove(piece, state.lastDice!!.value, movingPlayer, state.players, state.mode, deferHomeEntry)) return
         val newState = GameEngine.selectPiece(state, piece, deferHomeEntry)
         setGameState(newState)
 
@@ -1095,7 +1097,7 @@ internal fun isRestorableGameState(state: GameState): Boolean {
     val diceSnapshot = state.lastDice
     if (diceSnapshot != null) {
         if (diceSnapshot.value !in 1..6) return false
-        if (diceSnapshot.rollCount !in 1..3) return false
+        if (diceSnapshot.rollCount !in 0..3) return false
     }
 
     state.players.forEach { player ->

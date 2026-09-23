@@ -13,7 +13,7 @@ import {
 import type { GameState, Piece, PlayerColor } from '../engine/types';
 import { currentPlayer as getCurrentPlayer } from '../engine/types';
 import type { OnlineMove, RoomPlayer } from '../types/online';
-import LudoBoard from '../components/LudoBoard';
+import MoveChoiceBoard from '../components/MoveChoiceBoard';
 import PlatformBadge from '../components/PlatformBadge';
 
 export default function GameBoardScreen() {
@@ -77,7 +77,7 @@ export default function GameBoardScreen() {
         const initial = newGame(activeColors, names, 'FREE_FOR_ALL');
         stateRef.current = initial;
         setGameState(initial);
-      } catch (e: unknown) {
+      } catch {
         setError('Could not load game.');
       }
     }
@@ -133,7 +133,7 @@ export default function GameBoardScreen() {
   }, [myColor]);
 
   async function submitMove(move: OnlineMove, finalState: GameState) {
-    noMovesTimerRef.current && clearTimeout(noMovesTimerRef.current);
+    if (noMovesTimerRef.current) clearTimeout(noMovesTimerRef.current);
     appliedCountRef.current++;
     applyState(finalState);
     setIsSubmitting(false);
@@ -177,39 +177,39 @@ export default function GameBoardScreen() {
     }
   }
 
-  async function handlePieceTap(piece: Piece) {
+  async function handlePieceTap(piece: Piece, deferHomeEntry: boolean) {
     const s = stateRef.current;
     if (!s || !isMyTurn() || s.turnPhase !== 'WAITING_FOR_PIECE_SELECTION' || isSubmitting) return;
     if (!s.movablePieces.find(p => p.color === piece.color && p.id === piece.id)) return;
 
     setIsSubmitting(true);
     const diceValue = s.lastDice!.value;
-    const final = selectPiece(s, piece);
+    const final = selectPiece(s, piece, deferHomeEntry);
 
     const move: OnlineMove = {
       index: appliedCountRef.current,
       actorId: getCurrentPlayer(s).id,
-      movingPlayerId: getCurrentPlayer(s).id,
+      movingPlayerId: s.players.find(p => p.color === piece.color)!.id,
       diceValue,
       pieceId: piece.id,
-      deferHomeEntry: false,
+      deferHomeEntry,
     };
 
     await submitMove(move, final);
   }
 
-  useEffect(() => () => { noMovesTimerRef.current && clearTimeout(noMovesTimerRef.current); }, []);
+  useEffect(() => () => { if (noMovesTimerRef.current) clearTimeout(noMovesTimerRef.current); }, []);
 
   if (!gameState) {
     return <div className="screen-center"><p>Loading game…</p></div>;
   }
 
   const cp = getCurrentPlayer(gameState);
-  const myTurn = isMyTurn();
+  const myTurn = cp.color === myColor && gameState.turnPhase !== 'GAME_OVER';
   const canRoll = myTurn && gameState.turnPhase === 'WAITING_FOR_ROLL' && !isSubmitting;
 
   const movablePieceIds = new Set(
-    (myTurn && gameState.turnPhase === 'WAITING_FOR_PIECE_SELECTION')
+    (myTurn && !isSubmitting && gameState.turnPhase === 'WAITING_FOR_PIECE_SELECTION')
       ? gameState.movablePieces.map(p => `${p.color}:${p.id}`)
       : [],
   );
@@ -247,7 +247,7 @@ export default function GameBoardScreen() {
       </div>
 
       <div className="game-main">
-        <LudoBoard
+        <MoveChoiceBoard
           gameState={gameState}
           movablePieceIds={movablePieceIds}
           onPieceTap={handlePieceTap}

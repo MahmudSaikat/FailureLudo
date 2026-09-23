@@ -13,6 +13,27 @@ import org.junit.Test
 class StackTapDecisionTest {
 
     @Test
+    fun arrivingPair_keepsOlderSingleAsSingleChoice() {
+        val pair = listOf(0, 1).map { id ->
+            Piece(id, PlayerColor.RED, PiecePosition.MainTrack(5), lastMovedAt = 50L, pairKey = "RED:0|RED:1")
+        }
+        val single = Piece(2, PlayerColor.RED, PiecePosition.MainTrack(5), lastMovedAt = 1L)
+        val pieces = pair + single
+        val decision = resolveStackTapDecision(TappedCellPieces(pieces, pieces, single), GameMode.FREE_FOR_ALL)
+        assertEquals(single, decision.options.first { it.label == "Move single" }.piece)
+        assertTrue(decision.options.first { it.label == "Move pair" }.piece in pair)
+    }
+
+    @Test
+    fun numberedCellBeforeQueue_keepsPairAndSingleChoices() {
+        val pieces = (0..2).map { id ->
+            Piece(id, PlayerColor.RED, PiecePosition.MainTrack(50), lastMovedAt = id.toLong())
+        }
+        val decision = resolveStackTapDecision(TappedCellPieces(pieces, pieces, pieces[2]), GameMode.FREE_FOR_ALL)
+        assertEquals(setOf("Move single", "Move pair"), decision.options.map { it.label }.toSet())
+    }
+
+    @Test
     fun safeSquare_prefersPreferredMovablePiece() {
         val preferred = Piece(
             id = 0,

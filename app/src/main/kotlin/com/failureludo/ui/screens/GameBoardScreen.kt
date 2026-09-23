@@ -412,6 +412,10 @@ fun GameBoardScreen(
 
     if (pendingHomeEntryChoicePiece != null) {
         val previewTint = playerColor(pendingHomeEntryChoicePiece!!.color, setup.playerColors)
+        val canCirculate = GameRules.canDeferHomeEntry(
+            pendingHomeEntryChoicePiece!!, gameState.lastDice!!.value,
+            pendingHomeEntryChoicePiece!!.color, gameState.players, gameState.mode
+        )
         AlertDialog(
             onDismissRequest = { viewModel.dismissHomeEntryChoice() },
             title = { Text("Choose Pawn Path") },
@@ -429,7 +433,9 @@ fun GameBoardScreen(
 
                     HomeEntryOptionPreviewCard(
                         title = "Keep Circulating",
-                        description = "Stay on the main track for another full round.",
+                        description = if (canCirculate) "Stay on the main track for another full round."
+                            else "Blocked by a pair or the three-pawn limit.",
+                        enabled = canCirculate,
                         tint = previewTint,
                         enterHomePath = false,
                         onClick = { viewModel.resolveHomeEntryChoice(enterHomePath = false) }
@@ -876,47 +882,12 @@ private fun Piece.toStackRef(): StackPieceRef = StackPieceRef(color = color, pie
 private fun sideKey(color: PlayerColor, mode: GameMode): Int =
     if (mode == GameMode.TEAM) color.teamIndex else color.ordinal
 
-private fun doubleComponentRefsForTapStack(stack: List<Piece>): Set<StackPieceRef> {
-    if (stack.size < 2) return emptySet()
-    if (stack.size == 2) return stack.map { it.toStackRef() }.toSet()
+private fun doubleComponentRefsForTapStack(stack: List<Piece>): Set<StackPieceRef> =
+    GameRules.pairMembers(stack).map { (color, id) -> StackPieceRef(color, id) }.toSet()
 
-    val topSingle = topSingleRefForTapStack(stack)
-    val candidates = stack
-        .map { it.toStackRef() to it }
-        .filter { (ref, _) -> ref != topSingle }
-        .sortedWith(
-            compareBy<Pair<StackPieceRef, Piece>>(
-                { it.second.lastMovedAt },
-                { it.first.color.ordinal },
-                { it.first.pieceId }
-            )
-        )
+private fun isPairLockedForTapStack(mainIndex: Int, pairRefs: Set<StackPieceRef>): Boolean =
+    pairRefs.isNotEmpty() && !Board.isSafeSquare(mainIndex)
 
-    return candidates.take(2).map { it.first }.toSet()
-}
-
-private fun topSingleRefForTapStack(stack: List<Piece>): StackPieceRef? {
-    if (stack.size < 3) return null
-    val top = stack.maxWithOrNull(
-        compareBy<Piece>({ it.lastMovedAt }, { it.color.ordinal }, { it.id })
-    ) ?: return null
-
-    return top.toStackRef()
-}
-
-private fun isPairLockedForTapStack(mainIndex: Int, pairRefs: Set<StackPieceRef>): Boolean {
-    if (pairRefs.isEmpty()) return false
-    if (Board.isSafeSquare(mainIndex)) return false
-
-    val pairColors = pairRefs.map { it.color }.toSet()
-    val isMixedTeamPair = pairColors.size > 1
-    if (!isMixedTeamPair) {
-        val color = pairColors.firstOrNull() ?: return false
-        if (mainIndex == Board.HOME_COLUMN_ENTRY.getValue(color)) return false
-    }
-
-    return true
-}
 
 private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>, PiecePosition> {
     return state.players
@@ -1020,6 +991,7 @@ private fun HomeEntryOptionPreviewCard(
     tint: Color,
     enterHomePath: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1027,6 +999,7 @@ private fun HomeEntryOptionPreviewCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(
+                enabled = enabled,
                 role = Role.Button,
                 onClickLabel = title,
                 onClick = onClick

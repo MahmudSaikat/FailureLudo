@@ -69,7 +69,7 @@ class TeamDiceSharingRuleTest {
     }
 
     @Test
-    fun `team dice unlocks from subsequent turn after both teammates have entered once`() {
+    fun `team dice unlocks on entry and is usable on the next bonus roll`() {
         val players = buildTeamPlayers(
             redPieces = listOf(
                 Piece(id = 0, color = PlayerColor.RED, position = PiecePosition.MainTrack(5), lastMovedAt = 10),
@@ -110,7 +110,10 @@ class TeamDiceSharingRuleTest {
 
         assertEquals(TurnPhase.WAITING_FOR_ROLL, afterEntry.turnPhase)
         assertTrue(afterEntry.hasEnteredBoardAtLeastOnce[PlayerId(3)] == true)
-        assertFalse(afterEntry.sharedTeamDiceEnabled.contains(PlayerColor.RED.teamIndex))
+        assertTrue(afterEntry.sharedTeamDiceEnabled.contains(PlayerColor.RED.teamIndex))
+        val bonus = GameEngine.rollDice(afterEntry, 2)
+        assertTrue(bonus.movablePieces.any { it.color == PlayerColor.RED })
+        assertTrue(bonus.movablePieces.any { it.color == PlayerColor.YELLOW })
 
         val afterTurnAdvance = GameEngine.advanceNoMoves(
             afterEntry.copy(turnPhase = TurnPhase.NO_MOVES_AVAILABLE)

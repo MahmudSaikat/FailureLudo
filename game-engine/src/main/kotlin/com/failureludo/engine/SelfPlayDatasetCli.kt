@@ -118,7 +118,7 @@ private class EpsilonExplorationSelfPlayPolicy(
         val canDefer = if (diceValue == null) {
             false
         } else {
-            GameRules.wouldEnterHomePath(
+            GameRules.canDeferHomeEntry(
                 piece = piece,
                 diceValue = diceValue,
                 color = piece.color,

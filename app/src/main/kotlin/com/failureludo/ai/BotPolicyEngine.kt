@@ -72,7 +72,7 @@ internal fun legalBotMoveCandidates(state: GameState): List<BotMoveDecision> {
     val diceValue = state.lastDice?.value ?: return emptyList()
 
     return state.movablePieces.flatMap { piece ->
-        val canDefer = GameRules.wouldEnterHomePath(
+        val canDefer = GameRules.canDeferHomeEntry(
             piece = piece,
             diceValue = diceValue,
             color = piece.color,

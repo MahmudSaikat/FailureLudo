@@ -60,11 +60,18 @@ object GameRules {
         diceValue: Int,
         player: Player,
         allPlayers: List<Player>,
-        mode: GameMode = GameMode.FREE_FOR_ALL
+        mode: GameMode = GameMode.FREE_FOR_ALL,
+        deferHomeEntry: Boolean = false
     ): Boolean {
-        if (piece.isFinished) return false
-
-        val destination = computeDestination(piece, diceValue, player.color, allPlayers, mode) ?: return false
+        if (piece.isFinished || diceValue !in 1..6) return false
+        if (deferHomeEntry && !wouldEnterHomePath(piece, diceValue, player.color, allPlayers, mode)) return false
+        val destination = computeDestination(piece, diceValue, player.color, allPlayers, mode, deferHomeEntry) ?: return false
+        if (destination is PiecePosition.MainTrack && !Board.isSafeSquare(destination.index)) {
+            val moving = movingPieceRefs(piece, diceValue, player.color, allPlayers, mode)
+            val remaining = ownStackAtIndex(destination.index, player.color, allPlayers, mode)
+                .count { PieceRef(it.color, it.piece.id) !in moving }
+            if (remaining + moving.size > 3) return false
+        }
 
         if (piece.position is PiecePosition.MainTrack && !isMovingAsLockedDouble(piece, diceValue, player.color, allPlayers, mode)) {
             val effectiveDice = effectiveDiceValue(piece, diceValue, player.color, allPlayers, mode) ?: return false
@@ -98,34 +105,28 @@ object GameRules {
         deferHomeEntry: Boolean = false,
         movedAt: Long = 0L
     ): List<Player> {
-        val newPosition = computeDestination(piece, diceValue, color, players, mode, deferHomeEntry)
+        val player = players.firstOrNull { it.color == color } ?: return players
+        if (!canMove(piece, diceValue, player, players, mode, deferHomeEntry)) return players
+        // Materialize legacy pairs before changing positions, so their members stay together.
+        val bonded = normalizePairs(players, mode)
+        val movingPiece = bonded.first { it.color == color }.pieces.first { it.id == piece.id }
+        val newPosition = computeDestination(movingPiece, diceValue, color, bonded, mode, deferHomeEntry)
             ?: return players
-
-        val movingRefs = movingPieceRefs(piece, diceValue, color, players, mode)
-
-        val playersAfterMove = players.map { player ->
-            player.copy(
-                pieces = player.pieces.map { p ->
-                    val ref = PieceRef(player.color, p.id)
-                    if (ref in movingRefs) {
-                        p.copy(position = newPosition, lastMovedAt = movedAt)
-                    } else p
+        val movingRefs = movingPieceRefs(movingPiece, diceValue, color, bonded, mode)
+        val captures = captureTargets(movingPiece, diceValue, color, bonded, mode, deferHomeEntry)
+            .map { PieceRef(it.color, it.pieceId) }.toSet()
+        val moved = bonded.map { owner ->
+            owner.copy(pieces = owner.pieces.map { pawn ->
+                val ref = PieceRef(owner.color, pawn.id)
+                when {
+                    ref in movingRefs -> pawn.copy(position = newPosition, lastMovedAt = movedAt)
+                    ref in captures -> pawn.copy(position = PiecePosition.HomeBase, pairKey = null)
+                    else -> pawn
                 }
-            )
+            })
         }
-
-        val captures = captureTargets(piece, diceValue, color, players, mode, deferHomeEntry)
-        if (captures.isEmpty()) return playersAfterMove
-
-        val captureMap = captures.groupBy { it.color }.mapValues { (_, value) -> value.map { it.pieceId }.toSet() }
-        return playersAfterMove.map { player ->
-            val capturedIds = captureMap[player.color] ?: return@map player
-            player.copy(
-                pieces = player.pieces.map { p ->
-                    if (p.id in capturedIds) p.copy(position = PiecePosition.HomeBase) else p
-                }
-            )
-        }
+        // Captures use the pre-move unit types. Bond the remaining pawns afterward.
+        return normalizePairs(moved, mode)
     }
 
     /**
@@ -231,11 +232,7 @@ object GameRules {
                 players = players,
                 mode = mode
             )
-            if (pairCaptureOnEnemyDouble.isNotEmpty()) {
-                return pairCaptureOnEnemyDouble
-            }
-
-            enemyStacks
+            pairCaptureOnEnemyDouble + enemyStacks
                 .flatMap { stack ->
                     val doubleRefs = doubleComponentRefsForStack(stack)
                     val protectedTopSingle = if (stack.size >= 3) topSingleRefForStack(stack) else null
@@ -262,7 +259,7 @@ object GameRules {
                     PieceRef(occupant.color, occupant.piece.id) != movingRef
             }
 
-        if (ownSinglesAtCell.isEmpty()) return emptyList()
+        if (ownSinglesAtCell.size != 1) return emptyList()
 
         val enemyDoubleTargets = enemyStacksAtIndex(destinationIndex, movingColor, players, mode)
             .flatMap { stack ->
@@ -290,6 +287,21 @@ object GameRules {
             else -> false
         }
     }
+
+    fun canDeferHomeEntry(
+        piece: Piece,
+        diceValue: Int,
+        color: PlayerColor,
+        players: List<Player>,
+        mode: GameMode = GameMode.FREE_FOR_ALL
+    ): Boolean {
+        val owner = players.firstOrNull { it.color == color } ?: return false
+        return canMove(piece, diceValue, owner, players, mode, deferHomeEntry = true)
+    }
+
+    fun pairMembers(stack: List<Piece>): Set<Pair<PlayerColor, Int>> =
+        doubleComponentRefsForStack(stack.map { Occupant(it.color, it) })
+            .map { it.color to it.pieceId }.toSet()
 
     /**
      * Whether the player gets an extra dice roll.
@@ -367,11 +379,6 @@ object GameRules {
 
         if (Board.isSafeSquare(index)) return emptySet()
 
-        val isMixedTeamPair = doubleRefs.map { it.color }.toSet().size > 1
-        if (!isMixedTeamPair && index == Board.HOME_COLUMN_ENTRY.getValue(color)) {
-            return emptySet()
-        }
-
         return doubleRefs
     }
 
@@ -421,23 +428,41 @@ object GameRules {
 
     private fun doubleComponentRefsForStack(stack: List<Occupant>): Set<PieceRef> {
         if (stack.size < 2) return emptySet()
-        if (stack.size == 2) return stack.map { PieceRef(it.color, it.piece.id) }.toSet()
-
-        val topSingle = topSingleRefForStack(stack)
-        val candidates = stack
-            .map { PieceRef(it.color, it.piece.id) to it.piece }
-            .filter { (ref, _) -> ref != topSingle }
-            .sortedWith(compareBy<Pair<PieceRef, Piece>>({ it.second.lastMovedAt }, { it.first.color.ordinal }, { it.first.pieceId }))
-
-        return candidates.take(2).map { it.first }.toSet()
+        val index = (stack.first().piece.position as? PiecePosition.MainTrack)?.index ?: return emptySet()
+        if (Board.isSafeSquare(index)) return emptySet()
+        val existing = stack.filter { it.piece.pairKey != null }.groupBy { it.piece.pairKey }
+            .values.firstOrNull { it.size == 2 }
+        // Old saves have no pair identity: migrate their original oldest-two convention once.
+        val pair = existing ?: stack.sortedWith(
+            compareBy<Occupant>({ it.piece.lastMovedAt }, { it.color.ordinal }, { it.piece.id })
+        ).take(2)
+        return pair.map { PieceRef(it.color, it.piece.id) }.toSet()
     }
 
     private fun topSingleRefForStack(stack: List<Occupant>): PieceRef? {
-        if (stack.size < 3) return null
-        val top = stack.maxWithOrNull(
-            compareBy<Occupant>({ it.piece.lastMovedAt }, { it.color.ordinal }, { it.piece.id })
-        ) ?: return null
-        return PieceRef(top.color, top.piece.id)
+        if (stack.size != 3) return null
+        val pair = doubleComponentRefsForStack(stack)
+        if (pair.isEmpty()) return null
+        return stack.map { PieceRef(it.color, it.piece.id) }.firstOrNull { it !in pair }
+    }
+
+    fun normalizePairs(players: List<Player>, mode: GameMode): List<Player> {
+        val keys = mutableMapOf<PieceRef, String>()
+        val cells = players.filter { it.isActive }.flatMap { it.pieces }
+            .mapNotNull { (it.position as? PiecePosition.MainTrack)?.index }.toSet()
+        cells.forEach { index ->
+            groupedStacksAtIndex(index, players, mode).values.forEach { stack ->
+                val pair = doubleComponentRefsForStack(stack)
+                if (pair.size == 2) {
+                    val key = pair.sortedWith(compareBy({ it.color.ordinal }, { it.pieceId }))
+                        .joinToString("|") { "${it.color.name}:${it.pieceId}" }
+                    pair.forEach { keys[it] = key }
+                }
+            }
+        }
+        return players.map { owner -> owner.copy(pieces = owner.pieces.map { pawn ->
+            pawn.copy(pairKey = keys[PieceRef(owner.color, pawn.id)])
+        }) }
     }
 
     private fun crossesOpponentDoubleBarrier(

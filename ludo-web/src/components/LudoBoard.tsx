@@ -113,7 +113,14 @@ function pawnOffsets(count: number): [number, number][] {
     case 1:  return [[0, 0]];
     case 2:  return [[-1, 0], [1, 0]];
     case 3:  return [[-1, -1], [1, -1], [0, 1]];
-    default: return [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+    default: {
+      const width = Math.ceil(Math.sqrt(count));
+      const height = Math.ceil(count / width);
+      return Array.from({ length: count }, (_, i) => [
+        (i % width - (width - 1) / 2) * 2 / (width - 1),
+        (Math.floor(i / width) - (height - 1) / 2) * 2 / Math.max(1, height - 1),
+      ]);
+    }
   }
 }
 
@@ -127,7 +134,7 @@ function starPoints(cx: number, cy: number, outerR: number, innerR: number, pts:
   return coords.join(' ');
 }
 
-function darken(_hex: string): string {
+function darken(): string {
   return 'rgba(0,0,0,0.35)';
 }
 
@@ -136,8 +143,8 @@ function Pawn({ cx, cy, r, color }: { cx: number; cy: number; r: number; color: 
   return (
     <g pointerEvents="none">
       <ellipse cx={cx} cy={cy + r * 0.62} rx={r * 0.72} ry={r * 0.26} fill="rgba(0,0,0,0.16)" />
-      <circle cx={cx} cy={cy + r * 0.18} r={r * 0.82} fill={color} stroke={darken(color)} strokeWidth={1} />
-      <circle cx={cx} cy={cy - r * 0.48} r={r * 0.46} fill={color} stroke={darken(color)} strokeWidth={1} />
+      <circle cx={cx} cy={cy + r * 0.18} r={r * 0.82} fill={color} stroke={darken()} strokeWidth={1} />
+      <circle cx={cx} cy={cy - r * 0.48} r={r * 0.46} fill={color} stroke={darken()} strokeWidth={1} />
       <circle cx={cx - r * 0.18} cy={cy - r * 0.58} r={r * 0.15} fill="rgba(255,255,255,0.45)" />
     </g>
   );
@@ -152,7 +159,7 @@ interface Props {
 }
 
 export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Props) {
-  const allPieces = gameState.players.flatMap(p => p.pieces);
+  const allPieces = gameState.players.filter(p => p.isActive).flatMap(p => p.pieces);
 
   return (
     <div className="board-container">
@@ -241,7 +248,7 @@ export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Pr
               pieces.length === 1 ? 13
               : pieces.length === 2 ? 10.5
               : pieces.length === 3 ? 9
-              : 8;
+              : Math.min(8, 17 / Math.ceil(Math.sqrt(pieces.length)));
 
             return pieces.map((piece, i) => {
               const idKey = `${piece.color}:${piece.id}`;
@@ -253,8 +260,18 @@ export default function LudoBoard({ gameState, movablePieceIds, onPieceTap }: Pr
                 <g
                   key={`pawn-${idKey}`}
                   style={{ cursor: isMovable ? 'pointer' : 'default' }}
+                  role={isMovable ? 'button' : undefined}
+                  tabIndex={isMovable ? 0 : undefined}
+                  aria-label={isMovable ? `Move ${piece.color.toLowerCase()} pawn ${piece.id + 1}` : undefined}
+                  onKeyDown={isMovable ? event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onPieceTap?.(piece);
+                    }
+                  } : undefined}
                   onClick={isMovable ? () => onPieceTap?.(piece) : undefined}
                 >
+                  <circle cx={px} cy={py} r={Math.max(r + 2, 6)} fill="transparent" pointerEvents="all" />
                   {isMovable && (
                     <circle
                       cx={px}

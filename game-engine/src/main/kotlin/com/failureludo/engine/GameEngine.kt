@@ -150,7 +150,9 @@ object GameEngine {
     }
 
     private fun rollDiceWithValue(state: GameState, diceValue: Int): GameState {
-        val rollCount = (state.lastDice?.rollCount?.takeIf { diceValue == 6 && it < 3 } ?: 0) + 1
+        val rollCount = if (diceValue == 6) {
+            (state.lastDice?.takeIf { it.value == 6 }?.rollCount ?: 0) + 1
+        } else 0
 
         // Three consecutive 6s → forfeit turn
         if (diceValue == 6 && rollCount == 3) {
@@ -224,6 +226,9 @@ object GameEngine {
         val diceValue = state.lastDice!!.value
         val movingPlayer = state.players.firstOrNull { it.color == piece.color }
             ?: error("Moving player not found for color ${piece.color}")
+        require(GameRules.canMove(piece, diceValue, movingPlayer, state.players, state.mode, deferHomeEntry)) {
+            "Selected move route is not legal."
+        }
         val movingPlayerId = movingPlayer.id
         val movingColor = piece.color
         val actingPlayerId = state.currentPlayer.id
@@ -305,6 +310,9 @@ object GameEngine {
             moveCounter = newMoveCounter,
             eventLog = state.eventLog + events,
             hasEnteredBoardAtLeastOnce = updatedEnteredBoardFlags,
+            sharedTeamDiceEnabled = computeSharedTeamDiceEnabled(
+                state.copy(hasEnteredBoardAtLeastOnce = updatedEnteredBoardFlags)
+            ),
             movablePieces = emptyList()
         )
 

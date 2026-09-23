@@ -353,7 +353,7 @@ private fun legalPolicyMoveOptions(state: GameState): List<PolicyMoveOption> {
     return state.movablePieces.flatMap { piece ->
         val movingPlayerId = state.players.firstOrNull { it.color == piece.color }?.id?.value
             ?: state.currentPlayer.id.value
-        val canDefer = GameRules.wouldEnterHomePath(
+        val canDefer = GameRules.canDeferHomeEntry(
             piece = piece,
             diceValue = diceValue,
             color = piece.color,

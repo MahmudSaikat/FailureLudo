@@ -19,6 +19,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.failureludo.data.online.RoomPlayer
+import com.failureludo.engine.GameRules
 import com.failureludo.engine.GameState
 import com.failureludo.engine.Piece
 import com.failureludo.engine.PlayerColor
@@ -49,6 +50,7 @@ fun OnlineGameBoardScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showQuitDialog by remember { mutableStateOf(false) }
+    var stackChoice by remember { mutableStateOf<Pair<GameState, List<StackMoveOption>>?>(null) }
 
     LaunchedEffect(roomId) { viewModel.initGame(roomId) }
 
@@ -123,7 +125,11 @@ fun OnlineGameBoardScreen(
                         allPieces       = allPieces,
                         movablePieceIds = movablePieceIds,
                         onCellPiecesTapped = { tapped ->
-                            if (uiState.canSelectPiece) viewModel.onPieceTapped(tapped)
+                            if (uiState.canSelectPiece) {
+                                val decision = resolveStackTapDecision(tapped, gameState.mode)
+                                decision.autoPiece?.let(viewModel::selectPiece)
+                                if (decision.options.isNotEmpty()) stackChoice = gameState to decision.options
+                            }
                         },
                         modifier = Modifier.size(sizing.boardSize)
                     )
@@ -144,6 +150,47 @@ fun OnlineGameBoardScreen(
                 }
             }
         }
+    }
+
+    stackChoice?.takeIf { it.first == uiState.gameState && uiState.canSelectPiece }?.let { (_, options) ->
+        AlertDialog(
+            onDismissRequest = { stackChoice = null },
+            title = { Text("Choose Pawn Move") },
+            text = {
+                Column {
+                    options.forEach { option ->
+                        TextButton(onClick = {
+                            stackChoice = null
+                            viewModel.selectPiece(option.piece)
+                        }) { Text(option.label) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { stackChoice = null }) { Text("Cancel") } }
+        )
+    }
+
+    uiState.pendingHomeEntryPiece?.let { piece ->
+        val state = uiState.gameState ?: return@let
+        val canCirculate = GameRules.canDeferHomeEntry(
+            piece, state.lastDice?.value ?: return@let, piece.color, state.players, state.mode
+        )
+        AlertDialog(
+            onDismissRequest = viewModel::dismissHomeEntryChoice,
+            title = { Text("Choose Pawn Path") },
+            text = {
+                Column {
+                    TextButton(onClick = { viewModel.resolveHomeEntryChoice(true) }) { Text("Enter Finish") }
+                    TextButton(enabled = canCirculate, onClick = { viewModel.resolveHomeEntryChoice(false) }) {
+                        Text("Keep Circulating")
+                    }
+                    if (!canCirculate) Text("Circulating is blocked by a pair or the three-pawn limit.")
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = viewModel::dismissHomeEntryChoice) { Text("Cancel") } }
+        )
     }
 
     if (showQuitDialog) {

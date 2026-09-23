@@ -100,7 +100,7 @@ object SelfPlayDatasetExporter {
                 deferHomeEntry = false
             )
 
-            val canDefer = GameRules.wouldEnterHomePath(
+            val canDefer = GameRules.canDeferHomeEntry(
                 piece = piece,
                 diceValue = dice,
                 color = piece.color,
@@ -162,6 +162,7 @@ object SelfPlayDatasetExporter {
                                     field("id", piece.id.toString())
                                     field("position", piecePositionToJson(piece.position))
                                     field("lastMovedAt", piece.lastMovedAt.toString())
+                                    field("pairKey", piece.pairKey?.let { jsonString(it) } ?: "null")
                                 }
                             }
                         )

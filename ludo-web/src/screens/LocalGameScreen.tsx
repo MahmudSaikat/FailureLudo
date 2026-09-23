@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { getLocalConfig } from '../game/localConfig';
 import { useLocalGame } from '../game/useLocalGame';
-import LudoBoard from '../components/LudoBoard';
+import MoveChoiceBoard from '../components/MoveChoiceBoard';
 import Dice from '../components/Dice';
 import WinCard from '../components/WinCard';
 import { PLAYER_COLOR } from '../theme';
@@ -63,7 +63,7 @@ function LocalGame({
       </div>
 
       <div className="game-main">
-        <LudoBoard gameState={state} movablePieceIds={movablePieceIds} onPieceTap={game.select} />
+        <MoveChoiceBoard gameState={state} movablePieceIds={movablePieceIds} onPieceTap={game.select} />
 
         <div className="game-controls">
           <Dice

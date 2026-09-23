@@ -24,6 +24,8 @@ export interface Piece {
   color: PlayerColor;
   position: PiecePosition;
   lastMovedAt: number;
+  /** Stable identity of a tied pair; absent for legacy snapshots and singles. */
+  pairKey?: string | null;
 }
 
 export interface Player {

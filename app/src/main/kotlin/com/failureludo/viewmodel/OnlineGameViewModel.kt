@@ -8,6 +8,8 @@ import com.failureludo.data.online.OnlineGameRepository
 import com.failureludo.data.online.OnlineMove
 import com.failureludo.data.online.RoomPlayer
 import com.failureludo.engine.DeterministicTurnInput
+import com.failureludo.engine.GameRules
+import com.failureludo.engine.Piece
 import com.failureludo.engine.GameEngine
 import com.failureludo.engine.GameMode
 import com.failureludo.engine.GameState
@@ -15,7 +17,6 @@ import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerId
 import com.failureludo.engine.PlayerType
 import com.failureludo.engine.TurnPhase
-import com.failureludo.ui.components.TappedCellPieces
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,7 +32,8 @@ data class OnlineGameUiState(
     val gameState: GameState? = null,
     val myColor: PlayerColor? = null,
     val roomPlayers: List<RoomPlayer> = emptyList(),
-    val isSubmitting: Boolean = false
+    val isSubmitting: Boolean = false,
+    val pendingHomeEntryPiece: Piece? = null
 ) {
     val isMyTurn: Boolean
         get() = gameState != null && gameState.currentPlayer.color == myColor && !gameState.isGameOver
@@ -145,20 +147,36 @@ class OnlineGameViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun onPieceTapped(tapped: TappedCellPieces) {
+    fun selectPiece(piece: Piece) {
         val state = localGameState ?: return
-        if (!_uiState.value.canSelectPiece) return
+        if (!_uiState.value.canSelectPiece || piece !in state.movablePieces) return
+        val dice = state.lastDice?.value ?: return
+        if (GameRules.wouldEnterHomePath(piece, dice, piece.color, state.players, state.mode)) {
+            _uiState.update { it.copy(pendingHomeEntryPiece = piece) }
+        } else applyPieceSelection(piece, false)
+    }
 
-        val piece = tapped.preferredPiece
-            ?: tapped.movablePieces.firstOrNull()
-            ?: return
-        if (piece !in state.movablePieces) return
+    fun dismissHomeEntryChoice() {
+        _uiState.update { it.copy(pendingHomeEntryPiece = null) }
+    }
 
+    fun resolveHomeEntryChoice(enterHomePath: Boolean) {
+        val piece = _uiState.value.pendingHomeEntryPiece ?: return
+        applyPieceSelection(piece, !enterHomePath)
+    }
+
+    private fun applyPieceSelection(piece: Piece, deferHomeEntry: Boolean) {
+        val state = localGameState ?: return
+        if (!_uiState.value.canSelectPiece || piece !in state.movablePieces) return
         val diceValue = state.lastDice?.value ?: return
-        val finalState = GameEngine.selectPiece(state, piece)
-
+        val owner = state.players.first { it.color == piece.color }
+        if (!GameRules.canMove(piece, diceValue, owner, state.players, state.mode, deferHomeEntry)) return
+        val finalState = GameEngine.selectPiece(state, piece, deferHomeEntry)
+        dismissHomeEntryChoice()
         submitAndApplyLocally(
-            move = buildMove(state, diceValue, pieceId = piece.id),
+            move = buildMove(state, diceValue, piece.id).copy(
+                movingPlayerId = owner.id.value, deferHomeEntry = deferHomeEntry
+            ),
             finalState = finalState
         )
     }
@@ -207,7 +225,7 @@ class OnlineGameViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         localGameState = state
-        _uiState.update { it.copy(gameState = state) }
+        _uiState.update { it.copy(gameState = state, pendingHomeEntryPiece = null) }
     }
 
     private fun applyMoveToState(state: GameState, move: OnlineMove): GameState {
