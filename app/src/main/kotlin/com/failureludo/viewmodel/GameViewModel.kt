@@ -163,6 +163,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _isTurnTransitionLocked = MutableStateFlow(false)
     val isTurnTransitionLocked: StateFlow<Boolean> = _isTurnTransitionLocked.asStateFlow()
 
+    data class PresentedRoll(val id: Long, val playerId: com.failureludo.engine.PlayerId, val value: Int)
+    private val _presentedRoll = MutableStateFlow<PresentedRoll?>(null)
+    val presentedRoll: StateFlow<PresentedRoll?> = _presentedRoll.asStateFlow()
+    private val _isDiceRolling = MutableStateFlow(false)
+    val isDiceRolling: StateFlow<Boolean> = _isDiceRolling.asStateFlow()
+    private var dicePresentationJob: Job? = null
+    private var rollSequence = 0L
+
     private val _pendingHomeEntryChoicePiece = MutableStateFlow<Piece?>(null)
     val pendingHomeEntryChoicePiece: StateFlow<Piece?> = _pendingHomeEntryChoicePiece.asStateFlow()
 
@@ -269,7 +277,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun rollDice() {
         if (isReplayModeActive()) return
-        if (_isTurnTransitionLocked.value) return
+        if (_isTurnTransitionLocked.value || _isDiceRolling.value) return
         clearPendingAutomationJobs()
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_ROLL) return
@@ -277,23 +285,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val newState = GameEngine.rollDice(state)
         setGameState(newState)
 
-        when (newState.turnPhase) {
-            TurnPhase.NO_MOVES_AVAILABLE -> {
-                scheduleNoMovesAdvance()
+        _presentedRoll.value = PresentedRoll(++rollSequence, state.currentPlayer.id,
+            newState.diceByPlayer[state.currentPlayer.id] ?: newState.lastDice?.value ?: 1)
+        _isDiceRolling.value = true
+        dicePresentationJob = viewModelScope.launch {
+            delay(if (_feedbackSettings.value.reducedMotion) 140 else 640)
+            _isDiceRolling.value = false
+            checkForBotTurn()
+            val settled = _gameState.value
+            if (settled != null && settled.currentPlayer.type == PlayerType.HUMAN &&
+                settled.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION) {
+                scheduleSingleMoveAssist(settled)
             }
-            TurnPhase.WAITING_FOR_PIECE_SELECTION -> {
-                // If current player is a bot, auto-select
-                if (newState.currentPlayer.type == PlayerType.BOT) {
-                    scheduleBotSelectPiece()
-                } else {
-                    scheduleSingleMoveAssist(newState)
-                }
-            }
-            else -> {}
         }
     }
 
     fun selectPiece(piece: Piece) {
+        if (_isDiceRolling.value || _isTurnTransitionLocked.value) return
         if (isReplayModeActive()) return
         val state = _gameState.value ?: return
         if (state.turnPhase != TurnPhase.WAITING_FOR_PIECE_SELECTION) return
@@ -552,6 +560,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun checkForBotTurn() {
+        if (_isDiceRolling.value) return
         if (isReplayModeActive()) return
         if (_isTurnTransitionLocked.value) return
         var state = _gameState.value ?: return
@@ -674,6 +683,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun clearPendingAutomationJobs() {
+        dicePresentationJob?.cancel()
+        dicePresentationJob = null
+        _isDiceRolling.value = false
         noMovesJob?.cancel()
         botRollJob?.cancel()
         botSelectJob?.cancel()

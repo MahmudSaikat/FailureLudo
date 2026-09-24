@@ -31,6 +31,7 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun FailureLudoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    forceLightSystemBarIcons: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColors else LightColors
@@ -39,7 +40,10 @@ fun FailureLudoTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme && !forceLightSystemBarIcons
+                isAppearanceLightNavigationBars = !darkTheme && !forceLightSystemBarIcons
+            }
         }
     }
 

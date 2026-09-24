@@ -14,7 +14,8 @@ data class FeedbackSettings(
     val musicEnabled: Boolean = false,
     val hapticsEnabled: Boolean = true,
     val masterVolume: Float = 0.8f,
-    val singleMoveAssistEnabled: Boolean = false
+    val singleMoveAssistEnabled: Boolean = false,
+    val reducedMotion: Boolean = false
 )
 
 private val Context.feedbackPreferencesDataStore by preferencesDataStore(name = "feedback_preferences")
@@ -22,6 +23,7 @@ private val Context.feedbackPreferencesDataStore by preferencesDataStore(name = 
 class GamePreferencesStore(private val context: Context) {
 
     private object Keys {
+        val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
         val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
         val MUSIC_ENABLED = booleanPreferencesKey("music_enabled")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
@@ -34,6 +36,7 @@ class GamePreferencesStore(private val context: Context) {
 
     suspend fun updateFeedbackSettings(settings: FeedbackSettings) {
         context.feedbackPreferencesDataStore.edit { prefs ->
+            prefs[Keys.REDUCED_MOTION] = settings.reducedMotion
             prefs[Keys.SOUND_ENABLED] = settings.soundEnabled
             prefs[Keys.MUSIC_ENABLED] = settings.musicEnabled
             prefs[Keys.HAPTICS_ENABLED] = settings.hapticsEnabled
@@ -44,6 +47,7 @@ class GamePreferencesStore(private val context: Context) {
 
     private fun Preferences.toFeedbackSettings(): FeedbackSettings {
         return FeedbackSettings(
+            reducedMotion = this[Keys.REDUCED_MOTION] ?: false,
             soundEnabled = this[Keys.SOUND_ENABLED] ?: true,
             musicEnabled = this[Keys.MUSIC_ENABLED] ?: false,
             hapticsEnabled = this[Keys.HAPTICS_ENABLED] ?: true,

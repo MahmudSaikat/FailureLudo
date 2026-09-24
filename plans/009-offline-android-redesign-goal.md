@@ -54,7 +54,10 @@ wholesale. Only inspect shared dependencies as needed to make the Android releas
 
 ## Current handoff
 
-Scope is confirmed; the redesign has not been implemented and no visual style has been approved.
-A fresh design proposal is recorded in [plan 010](010-offline-android-fresh-design-plan.md).
-The previous web/online UI review is outside this effort. The next design task is the native Android
-board/game-screen direction, followed by the offline presentation rebuild.
+Implementation has started at the user's request. A first playable native Android prototype
+uses modern tactile tabletop as a working direction, pending visual review. See the implementation
+handoff in [plan 010](010-offline-android-fresh-design-plan.md). The broader redesign and release
+are still in progress; setup/results styling and final audio remain unfinished.
+
+The previous web/online UI review is outside this effort. Next, review the Android prototype
+and refine its board/game-screen direction before expanding the presentation rebuild.

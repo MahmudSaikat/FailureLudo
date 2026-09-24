@@ -586,7 +586,7 @@ private fun Float.format(scale: Int): String {
     return java.lang.String.format(java.util.Locale.US, "%.${scale}f", this)
 }
 
-private fun buildPieceLayouts(
+internal fun buildPieceLayouts(
     allPieces: Map<PlayerColor, List<Piece>>,
     movablePieceIds: Set<Pair<PlayerColor, Int>>,
     animatedPieceCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,

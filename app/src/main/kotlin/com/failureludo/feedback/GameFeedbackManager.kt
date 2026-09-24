@@ -14,9 +14,9 @@ enum class FeedbackEvent {
     WIN
 }
 
-class GameFeedbackManager(context: Context) {
+class GameFeedbackManager(context: Context, soundPrefix: String = "sfx_") {
 
-    private val audioManager = GameAudioManager(context)
+    private val audioManager = GameAudioManager(context, soundPrefix)
 
     fun emitSound(event: FeedbackEvent, settings: FeedbackSettings) {
         if (!settings.soundEnabled) return

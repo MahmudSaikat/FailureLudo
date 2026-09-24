@@ -23,7 +23,7 @@ layout, board, pawns, movement, dice animation, sound, and supporting screens.
 - Preserve game rules, bots, saves, history/replay, and reliable selection while replacing presentation.
 - Keep deferred online work recoverable. “Go back in time” describes product scope; it is not an
   instruction to reset Git history, switch branches, or delete online infrastructure wholesale.
-- Visual direction is not yet selected. Premium tabletop was suggested, not approved.
+- Implementation has started: the first playable prototype uses modern tactile tabletop as a working direction, pending visual review. See plan 010 for completed work and remaining scope.
 - After the offline Android release and real play, revisit online work and carry over the finished design.
 
 ## Architecture reminder
@@ -44,4 +44,4 @@ GameEngine stays pure/local. Network layer feeds opponent moves into it via Fire
 - 007: online multiplayer (paused)
 - 008: web/native parity (paused)
 - 009: offline Android redesign and release (current goal)
-- 010: fresh offline Android design plan (proposal; visual direction pending)
+- 010: fresh offline Android design plan (first playable prototype; visual review pending)

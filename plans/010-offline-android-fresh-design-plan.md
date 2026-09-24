@@ -1,6 +1,6 @@
 # 010 — Fresh offline Android design plan
 
-Status: proposal for the user to review; visual direction is not yet selected.
+Status: first playable Android prototype implemented; modern tactile tabletop is the working direction, pending visual review.
 Scope: native Android only, on `feat/offline-improvements`.
 Goal: [perfect, release, and play the offline app first](009-offline-android-redesign-goal.md).
 
@@ -199,7 +199,7 @@ Use assets with clear redistribution rights; record their sources or creation pr
 ### Concrete sound sourcing plan
 
 Use real recordings for physical contacts and original synthesized tones for short musical/UI
-cues. No specific recordings have been selected, downloaded, or auditioned yet.
+cues. No third-party recordings have been selected or downloaded. The first prototype bundles original synthesized audition sounds; see [audio sources](../design/audio/README.md).
 
 | Sound family | Proposed source and preparation |
 | --- | --- |
@@ -266,17 +266,17 @@ pawn states, timing, and sound cues. Keep these decisions independent of existin
 
 ### Phase B — Playable presentation slice
 
-- [ ] Build the new board, player panels, pawns, die, and touch selection.
+- [x] Build the new board, player panels, pawns, die, and touch selection.
 - [ ] Demonstrate one complete roll → selection → move → handoff sequence.
 - [ ] Include a capture, a pair move, a home-path choice, and a finish sequence.
 - [ ] Synchronize sound/haptics and provide mute/reduced-motion behavior.
-- [ ] Make the slice playable against the existing rules, not just an animation demo.
+- [x] Make the slice playable against the existing rules, not just an animation demo.
 
 ### Phase C — Complete offline app
 
 - [ ] Apply the design to home, setup, settings, results, and replay/history.
 - [ ] Preserve save/resume, undo/redo, teams, bots, and user settings.
-- [ ] Isolate offline startup/navigation from network services and hide online entry points.
+- [x] Isolate offline startup/navigation from network services and hide online entry points.
 - [ ] Remove superseded offline presentation and assets once their replacements are verified.
 
 ### Phase D — Device polish and release
@@ -301,8 +301,30 @@ work reliably. The user should be happy to install, release, and play this versi
 Do not broaden this effort into online work, theme stores, cosmetic economies, or multiplayer
 architecture. Choose one strong visual direction and finish it.
 
-## Next action
+## Implementation handoff — first prototype
 
-Create the native Android gameplay visual prototype. The recommended starting concept is
-modern tactile tabletop. The user has requested a fresh plan; they have not yet selected the
-visual direction or approved a prototype. No redesign implementation is claimed by this document.
+Implemented in `ui/tabletop/`, wired into native offline gameplay:
+
+- A separate board renderer with ceramic-style track cells, colored home courts, safe markers,
+  a center medallion, sculpted pawns, player symbols, and pair links.
+- Portrait player rails and a stable dice tray; a side-by-side board/control layout in landscape.
+- A projected cube with fixed numbered faces, several rotations, landing/settling, and a roll
+  event identity so equal consecutive results still animate.
+- A roll presentation gate before bot selection, single-move assistance, or no-move advance.
+- Interpolated pawn hops, capture-return paths, and contact sounds at movement steps.
+- A persistent reduced-motion preference and original, reproducible prototype audio.
+- New offline home screen; active navigation starts at Home and excludes online/auth routes.
+- Existing engine, save/resume, setup, history/replay, undo/redo, and stack/home-choice logic retained.
+
+The old setup and results screens remain for this first slice. Final art review, a complete
+motion/stack/accessibility pass, final audio selection, and extended device play remain open.
+The existing online source and dependencies are retained, but online features are not exposed
+through this branch's active navigation. No online UI work was performed.
+
+Next: install and review the prototype at actual phone size, then refine the board/dice feel
+before extending the design to setup, results, and history. This is not a release candidate.
+
+Validation: debug APK builds; 66 Android unit tests and 73 engine tests pass. An Android 16
+emulator UI smoke test passed in airplane mode through setup, a settled dice roll, landscape
+rotation, and feedback settings. [Screenshots and build handoff](../design/prototypes/README.md).
+Full-game and physical-device validation remain open.

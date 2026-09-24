@@ -1,0 +1,211 @@
+package com.failureludo.ui.tabletop
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import com.failureludo.engine.Board
+import com.failureludo.engine.Piece
+import com.failureludo.engine.PlayerColor
+import com.failureludo.ui.components.BoardCoordinates
+import com.failureludo.ui.components.TappedCellPieces
+import com.failureludo.ui.components.buildPieceLayouts
+import com.failureludo.ui.components.resolveTappedCellPieces
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+
+object TabletopStyle {
+    val Ink = Color(0xFF102C30)
+    val Panel = Color(0xFF1D3D40)
+    val Paper = Color(0xFFF8F3E7)
+    val Muted = Color(0xFFADBFBA)
+    val Gold = Color(0xFFE5C17B)
+}
+
+/** Shares tested selection geometry with the engine-facing board, but owns its artwork. */
+@Composable
+fun TabletopBoard(
+    pieces: Map<PlayerColor, List<Piece>>,
+    movable: Set<Pair<PlayerColor, Int>>,
+    palette: Map<PlayerColor, Color>,
+    animatedCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,
+    fromCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,
+    progress: Float,
+    onTap: (TappedCellPieces) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val legalPieces = pieces.values.flatten().filter { it.color to it.id in movable }
+    Canvas(modifier
+        .semantics {
+            contentDescription = "Ludo board. ${legalPieces.size} movable pawns."
+            customActions = legalPieces.map { piece ->
+                CustomAccessibilityAction("Move ${piece.color.displayName} pawn ${piece.id + 1}") {
+                    val cell = BoardCoordinates.cellFor(piece)
+                    val atCell = pieces.values.flatten().filter { BoardCoordinates.cellFor(it) == cell }
+                    onTap(TappedCellPieces(atCell, atCell.filter { it.color to it.id in movable }, piece))
+                    true
+                }
+            }
+        }
+        .pointerInput(pieces, movable, animatedCells) {
+            detectTapGestures { tap ->
+                if (movable.isNotEmpty()) {
+                    val cell = size.width / 15f
+                    val layouts = buildPieceLayouts(pieces, movable, emptyMap(), cell, size.width.toFloat())
+                    resolveTappedCellPieces(tap, layouts, cell, 24.dp.toPx())?.let(onTap)
+                }
+            }
+        }) {
+        val c = size.width / 15f
+        drawTable(c, palette)
+        val visible = pieces.mapValues { (_, pawns) -> pawns.filter { !it.isFinished || it.color to it.id in animatedCells } }
+        val layouts = buildPieceLayouts(visible, movable, animatedCells, c, size.width)
+        // Linked pairs are recognizable even when the two members have different colors.
+        layouts.filter { it.piece.pairKey != null }.groupBy { it.piece.pairKey }.values.forEach { pair ->
+            if (pair.size == 2 && pair[0].cell == pair[1].cell) {
+                drawLine(TabletopStyle.Ink.copy(alpha = .65f), pair[0].center, pair[1].center,
+                    strokeWidth = c * .19f, cap = StrokeCap.Round)
+            }
+        }
+        layouts.sortedWith(compareBy({ it.isMovable }, { it.center.y })).forEach { layout ->
+            val key = layout.piece.color to layout.piece.id
+            val to = animatedCells[key]
+            val from = fromCells[key]
+            val traveling = to != null && from != null && to != from
+            val delta = if (traveling) Offset(
+                (from!!.second - to!!.second) * c * (1f - progress),
+                (from.first - to.first) * c * (1f - progress)
+            ) else Offset.Zero
+            val lift = if (traveling) sin(progress * PI).toFloat() * c * .23f else 0f
+            drawPawn(layout.center + delta, layout.radius, palette[layout.piece.color] ?: Color.Red,
+                layout.isMovable, lift, layout.piece.color.ordinal)
+        }
+    }
+}
+
+private fun DrawScope.drawTable(c: Float, palette: Map<PlayerColor, Color>) {
+    drawRect(TabletopStyle.Paper)
+    // Solid home courtyards replace the old full-board grid.
+    val origins = listOf(0 to 0, 0 to 9, 9 to 9, 9 to 0)
+    PlayerColor.entries.forEachIndexed { index, color ->
+        val tint = palette[color] ?: Color.Gray
+        val (row, col) = origins[index]
+        val corner = Offset((col + .22f) * c, (row + .22f) * c)
+        drawRoundRect(Brush.linearGradient(listOf(tint.copy(alpha = .85f), tint)), corner,
+            Size(5.56f * c, 5.56f * c), CornerRadius(c * .42f))
+        drawRoundRect(Color.White.copy(alpha = .25f), corner + Offset(c * .12f, c * .12f),
+            Size(5.32f * c, 5.32f * c), CornerRadius(c * .34f), style = Stroke(c * .035f))
+        drawRoundRect(TabletopStyle.Paper, Offset((col + .65f) * c, (row + .65f) * c),
+            Size(4.7f * c, 4.7f * c), CornerRadius(c * .65f))
+        BoardCoordinates.HOME_YARD_SPOTS.getValue(color).forEach { (r, cl) ->
+            val center = Offset((cl + .5f) * c, (r + .5f) * c)
+            drawCircle(tint.copy(alpha = .13f), c * .61f, center)
+            drawCircle(tint.copy(alpha = .22f), c * .60f, center, style = Stroke(c * .04f))
+        }
+        drawIdentity(Offset((col + 3f) * c, (row + 3f) * c), c * .28f, tint.copy(alpha = .65f), index)
+    }
+    BoardCoordinates.MAIN_TRACK.forEachIndexed { index, cell ->
+        val entry = PlayerColor.entries.firstOrNull { it.entryPosition == index }
+        val tint = entry?.let { palette[it] } ?: Color(0xFFE7E3D8)
+        drawTile(cell, c, if (entry != null) tint else Color(0xFFFFFDF7))
+        if (index in Board.SAFE_SQUARES) {
+            val center = Offset((cell.second + .5f) * c, (cell.first + .5f) * c)
+            drawStar(center, c * .24f, if (entry != null) Color.White else Color(0xFF8D9B94))
+        }
+    }
+    PlayerColor.entries.forEach { color ->
+        val tint = palette[color] ?: Color.Gray
+        BoardCoordinates.HOME_COLUMNS.getValue(color).forEach { cell ->
+            drawTile(cell, c, tint.copy(alpha = .75f))
+            drawCircle(Color.White.copy(alpha = .7f), c * .065f,
+                Offset((cell.second + .5f) * c, (cell.first + .5f) * c))
+        }
+    }
+    val center = Offset(7.5f * c, 7.5f * c)
+    val corners = listOf(Offset(6*c, 6*c), Offset(9*c, 6*c), Offset(9*c, 9*c), Offset(6*c, 9*c))
+    // Home lanes point into a four-way finish medallion.
+    val colors = listOf(PlayerColor.BLUE, PlayerColor.YELLOW, PlayerColor.GREEN, PlayerColor.RED)
+    corners.forEachIndexed { i, point ->
+        val next = corners[(i + 1) % 4]
+        drawPath(Path().apply { moveTo(center.x, center.y); lineTo(point.x, point.y); lineTo(next.x, next.y); close() },
+            (palette[colors[i]] ?: Color.Gray).copy(alpha = .85f))
+    }
+    drawCircle(TabletopStyle.Ink.copy(alpha = .15f), c * .71f, center + Offset(0f, c * .08f))
+    drawCircle(TabletopStyle.Paper, c * .66f, center)
+    drawStar(center, c * .37f, TabletopStyle.Gold)
+}
+
+private fun DrawScope.drawTile(cell: Pair<Int, Int>, c: Float, color: Color) {
+    val at = Offset((cell.second + .065f) * c, (cell.first + .065f) * c)
+    drawRoundRect(Color(0xFFD8D3C6), at + Offset(0f, c * .04f), Size(c * .87f, c * .87f), CornerRadius(c * .10f))
+    drawRoundRect(color, at, Size(c * .87f, c * .83f), CornerRadius(c * .10f))
+}
+
+private fun DrawScope.drawStar(center: Offset, r: Float, color: Color) {
+    val path = Path()
+    repeat(10) { i ->
+        val angle = -PI / 2 + i * PI / 5
+        val radius = if (i % 2 == 0) r else r * .44f
+        val x = center.x + cos(angle).toFloat() * radius
+        val y = center.y + sin(angle).toFloat() * radius
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    drawPath(path, color)
+}
+
+internal fun DrawScope.drawIdentity(center: Offset, r: Float, color: Color, index: Int) {
+    when (index) {
+        0 -> drawCircle(color, r, center, style = Stroke(r * .4f))
+        1 -> drawRoundRect(color, center - Offset(r, r), Size(r*2, r*2), CornerRadius(r*.2f), style = Stroke(r*.4f))
+        2 -> drawPath(Path().apply {
+            moveTo(center.x, center.y-r); lineTo(center.x+r, center.y+r)
+            lineTo(center.x-r, center.y+r); close()
+        }, color, style = Stroke(r*.4f))
+        else -> {
+            drawLine(color, center-Offset(r, 0f), center+Offset(r, 0f), r*.45f, StrokeCap.Round)
+            drawLine(color, center-Offset(0f, r), center+Offset(0f, r), r*.45f, StrokeCap.Round)
+        }
+    }
+}
+
+private fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: Boolean, lift: Float, identity: Int) {
+    drawOval(Color.Black.copy(alpha = if (lift > 0) .13f else .22f),
+        at + Offset(-r*.85f, r*.43f), Size(r*1.8f, r*.65f))
+    val p = at - Offset(0f, lift)
+    if (selectable) {
+        drawCircle(TabletopStyle.Ink, r * 1.08f, at, style = Stroke(r*.15f))
+        drawCircle(Color.White, r * 1.23f, at, style = Stroke(r*.08f))
+    }
+    val body = Path().apply {
+        moveTo(p.x-r*.35f, p.y-r*.22f)
+        cubicTo(p.x-r*.28f, p.y+r*.1f, p.x-r*.78f, p.y+r*.30f, p.x-r*.78f, p.y+r*.62f)
+        quadraticTo(p.x, p.y+r*.94f, p.x+r*.78f, p.y+r*.62f)
+        cubicTo(p.x+r*.78f, p.y+r*.30f, p.x+r*.28f, p.y+r*.1f, p.x+r*.35f, p.y-r*.22f)
+        close()
+    }
+    val dark = Color(color.red*.55f, color.green*.55f, color.blue*.55f)
+    drawPath(body, Brush.linearGradient(listOf(color, color, dark), p-Offset(r,r), p+Offset(r,r)))
+    drawPath(body, dark, style = Stroke(r * .065f))
+    drawOval(dark, p+Offset(-r*.78f, r*.51f), Size(r*1.56f, r*.34f))
+    drawLine(Color.White.copy(alpha=.35f), p+Offset(-r*.48f,r*.59f), p+Offset(r*.35f,r*.64f), r*.07f, StrokeCap.Round)
+    val head = p - Offset(0f, r*.46f)
+    drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha=.9f), color, dark), head-Offset(r*.22f,r*.2f), r*.8f), r*.48f, head)
+    drawIdentity(p+Offset(0f,r*.29f), r*.17f, Color.White.copy(alpha=.9f), identity)
+}

@@ -10,4 +10,4 @@ Read [CLAUDE.md](CLAUDE.md) for project conventions and
   features unless explicitly requested or strictly necessary to remove an offline entry-point dependency.
 - Preserve gameplay rules and offline functionality. Keep deferred work recoverable.
 - Return to online development only after the offline release and play phase, when the user resumes it.
-- The visual style remains undecided; previous aesthetic suggestions are not accepted requirements.
+- Implementation has started with a playable modern tactile tabletop prototype. Treat its style as a working direction pending user review; see plan 010 for the handoff.

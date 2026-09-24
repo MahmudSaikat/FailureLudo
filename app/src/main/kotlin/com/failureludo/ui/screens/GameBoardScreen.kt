@@ -2,11 +2,10 @@ package com.failureludo.ui.screens
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +18,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.Alignment
@@ -26,37 +27,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import com.failureludo.ui.tabletop.*
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.failureludo.R
 import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
 import com.failureludo.feedback.GameFeedbackManager
 import com.failureludo.ui.components.BoardCoordinates
-import com.failureludo.ui.components.DiceView
-import com.failureludo.ui.components.LudoBoardCanvas
 import com.failureludo.ui.components.TappedCellPieces
 import com.failureludo.ui.theme.*
 import com.failureludo.viewmodel.GameViewModel
 import com.failureludo.viewmodel.ReplayUiState
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 internal data class BoardLayoutSizing(
     val diceSize: Dp,
@@ -64,14 +57,6 @@ internal data class BoardLayoutSizing(
     val boardSize: Dp
 )
 
-private const val PIECE_MOVE_STEP_DELAY_MS = 130L
-private const val PIECE_MOVE_SETTLE_DELAY_MS = 120L
-private const val PIECE_MOVE_BREATH_PERIOD_MS = 240
-private const val PIECE_MOVE_BREATH_MIN_SCALE = 0.90f
-private const val PIECE_MOVE_BREATH_MAX_SCALE = 1.30f
-private const val CAPTURE_RETURN_ACCELERATION_THRESHOLD = 8
-private const val PLAY_AREA_BACKGROUND_IMAGE_ALPHA = 0.34f
-private const val PLAY_AREA_BACKGROUND_OVERLAY_ALPHA = 0.10f
 
 private data class PieceAnimationPlan(
     val paths: List<Pair<Pair<PlayerColor, Int>, List<Pair<Int, Int>>>> = emptyList(),
@@ -113,6 +98,9 @@ fun GameBoardScreen(
     onQuit: () -> Unit
 ) {
     val state by viewModel.gameState.collectAsState()
+    val presentedRoll by viewModel.presentedRoll.collectAsState()
+    val isDiceRolling by viewModel.isDiceRolling.collectAsState()
+    var finishRequested by remember { mutableStateOf(false) }
     val setup by viewModel.setupState.collectAsState()
     val feedbackSettings by viewModel.feedbackSettings.collectAsState()
     val pendingHomeEntryChoicePiece by viewModel.pendingHomeEntryChoicePiece.collectAsState()
@@ -122,7 +110,7 @@ fun GameBoardScreen(
     val isTurnTransitionLocked by viewModel.isTurnTransitionLocked.collectAsState()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val feedbackManager = remember(context) { GameFeedbackManager(context) }
+    val feedbackManager = remember(context) { GameFeedbackManager(context, soundPrefix = "tabletop_") }
 
     DisposableEffect(feedbackManager) {
         onDispose {
@@ -132,7 +120,7 @@ fun GameBoardScreen(
 
     // Wire the game-over callback once
     LaunchedEffect(Unit) {
-        viewModel.onGameOver = onGameOver
+        viewModel.onGameOver = { finishRequested = true }
     }
 
     if (state == null) {
@@ -149,12 +137,9 @@ fun GameBoardScreen(
     var showFeedbackDialog by remember { mutableStateOf(false) }
     var pendingStackChoice by remember { mutableStateOf<StackMoveChoiceState?>(null) }
 
-    var previousDiceSignature by remember { mutableStateOf<String?>(null) }
-    var previousEventSize by remember { mutableIntStateOf(0) }
-    var captureFxTrigger by remember { mutableIntStateOf(0) }
-    var captureFxColor by remember { mutableStateOf(Color.White) }
-    var finishFxTrigger by remember { mutableIntStateOf(0) }
-    var finishFxColor by remember { mutableStateOf(Color.White) }
+    val animationFromCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
+    val movementProgress = remember { Animatable(1f) }
+    var previousEventSize by remember { mutableIntStateOf(gameState.eventLog.size) }
     var replayAutoplayEnabled by remember { mutableStateOf(false) }
     var replaySpeedIndex by remember { mutableIntStateOf(0) }
     val animatedPieceCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
@@ -188,28 +173,14 @@ fun GameBoardScreen(
     val movingPieceStepCount = precomputedAnimationPlan.movingPieceStepCount
     val hasCaptureDuringAnimation = precomputedAnimationPlan.hasCapture
     val isMovementAnimationActive = precomputedAnimationPaths.isNotEmpty() || animatedPieceCells.isNotEmpty()
-    val movementBreathTransition = rememberInfiniteTransition(label = "piece_move_breath")
-    val movementBreathPhase by movementBreathTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = PIECE_MOVE_BREATH_PERIOD_MS,
-                easing = LinearEasing
-            ),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "piece_move_breath_phase"
-    )
-    val movingPieceScale = if (isMovementAnimationActive) {
-        val sineInput = movementBreathPhase * (2f * PI.toFloat())
-        val normalizedWave = ((sin(sineInput.toDouble()) + 1.0) / 2.0).toFloat()
-        PIECE_MOVE_BREATH_MIN_SCALE +
-            ((PIECE_MOVE_BREATH_MAX_SCALE - PIECE_MOVE_BREATH_MIN_SCALE) * normalizedWave)
-    } else {
-        1f
+    val isTurnInputBlocked = isMovementAnimationActive || isTurnTransitionLocked || isDiceRolling
+    BackHandler { showQuitDialog = true }
+    LaunchedEffect(finishRequested, isMovementAnimationActive) {
+        if (finishRequested && !isMovementAnimationActive) onGameOver()
     }
-    val isTurnInputBlocked = isMovementAnimationActive || isTurnTransitionLocked
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.onGameOver = null; viewModel.updateMovementAnimationState(false) }
+    }
 
     val firstFrameAnimationCells = remember(precomputedAnimationPaths) {
         precomputedAnimationPaths.associate { (key, cells) -> key to cells.first() }
@@ -228,28 +199,29 @@ fun GameBoardScreen(
                 animatedPieceCells.clear()
                 val maxSteps = precomputedAnimationPaths.maxOf { (_, cells) -> cells.size }
                 for (stepIndex in 0 until maxSteps) {
+                    animationFromCells.clear()
                     precomputedAnimationPaths.forEach { (key, cells) ->
-                        val cell = cells.getOrNull(stepIndex) ?: cells.last()
-                        animatedPieceCells[key] = cell
+                        animationFromCells[key] = cells.getOrNull((stepIndex - 1).coerceAtLeast(0)) ?: cells.last()
+                        animatedPieceCells[key] = cells.getOrNull(stepIndex) ?: cells.last()
                     }
-
+                    if (stepIndex > 0) {
+                        movementProgress.snapTo(0f)
+                        movementProgress.animateTo(1f, tween(
+                            durationMillis = if (latestFeedbackSettings.reducedMotion) 1 else
+                                if (hasCaptureDuringAnimation && stepIndex >= movingPieceStepCount) 280 else 115,
+                            easing = LinearEasing))
+                    }
                     if (stepIndex in 1 until movingPieceStepCount) {
-                        val isCaptureLandingStep = hasCaptureDuringAnimation &&
-                            stepIndex == movingPieceStepCount - 1
-                        if (isCaptureLandingStep) {
-                            feedbackManager.emitSound(FeedbackEvent.CAPTURE, latestFeedbackSettings)
-                        } else {
-                            feedbackManager.emitSound(FeedbackEvent.PIECE_MOVE, latestFeedbackSettings)
+                        val landingCapture = hasCaptureDuringAnimation && stepIndex == movingPieceStepCount - 1
+                        feedbackManager.emitSound(if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
+                            latestFeedbackSettings)
+                        if (landingCapture && latestFeedbackSettings.hapticsEnabled) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     }
-
-                    if (stepIndex < maxSteps - 1) {
-                        kotlinx.coroutines.delay(PIECE_MOVE_STEP_DELAY_MS)
-                    }
                 }
-                if (maxSteps > 0) {
-                    kotlinx.coroutines.delay(PIECE_MOVE_SETTLE_DELAY_MS)
-                }
+                kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 1 else 90)
+                animationFromCells.clear()
                 animatedPieceCells.clear()
             }
         } else if (previousMoveCounter >= 0L && gameState.moveCounter != previousMoveCounter) {
@@ -260,19 +232,24 @@ fun GameBoardScreen(
         previousMoveCounter = gameState.moveCounter
     }
 
-    LaunchedEffect(gameState, feedbackSettings) {
-        val diceSignature = gameState.lastDice?.let {
-            "${gameState.currentPlayer.id.value}-${it.value}-${it.rollCount}-${gameState.turnPhase.name}"
+    LaunchedEffect(presentedRoll?.id) {
+        if (isDiceRolling && presentedRoll != null) {
+            feedbackManager.emitSound(FeedbackEvent.DICE_ROLL, latestFeedbackSettings)
+            kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 100 else 460)
+            if (latestFeedbackSettings.hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
-        if (diceSignature != null && diceSignature != previousDiceSignature) {
-            feedbackManager.emitSound(FeedbackEvent.DICE_ROLL, feedbackSettings)
-            if (feedbackSettings.hapticsEnabled) {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            }
-        }
-        previousDiceSignature = diceSignature
+    }
 
-        if (gameState.eventLog.size > previousEventSize) {
+    LaunchedEffect(gameState.eventLog.size) {
+        if (gameState.eventLog.size > previousEventSize && !replayUiState.isReplayMode) {
+            val motionSteps = precomputedAnimationPaths.maxOfOrNull { it.second.size - 1 } ?: 0
+            if (motionSteps > 0) {
+                val returnSteps = if (hasCaptureDuringAnimation) (motionSteps - (movingPieceStepCount - 1)).coerceAtLeast(0) else 0
+                kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) motionSteps.toLong()
+                    else (motionSteps - returnSteps) * 115L + returnSteps * 280L)
+            }
+            else if (isDiceRolling) kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 140 else 640)
+
             var playedCaptureInBatch = false
             gameState.eventLog.subList(previousEventSize, gameState.eventLog.size).forEach { event ->
                 when (event) {
@@ -282,17 +259,13 @@ fun GameBoardScreen(
                             feedbackManager.emitSound(FeedbackEvent.CAPTURE, feedbackSettings)
                             playedCaptureInBatch = true
                         }
-                        captureFxColor = playerColor(event.byColor, setup.playerColors)
-                        captureFxTrigger += 1
-                        if (feedbackSettings.hapticsEnabled) {
+                        if (!shouldSequenceCaptureAudio && feedbackSettings.hapticsEnabled) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     }
 
                     is GameEvent.PieceFinished -> {
                         feedbackManager.emitSound(FeedbackEvent.PIECE_FINISH, feedbackSettings)
-                        finishFxColor = playerColor(event.color, setup.playerColors)
-                        finishFxTrigger += 1
                     }
 
                     is GameEvent.ExtraRollGranted -> {
@@ -499,57 +472,50 @@ fun GameBoardScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        SplitEdgePlayBackground(
-            modifier = Modifier.fillMaxSize()
-        )
+    val keepRollOwner = !replayUiState.isReplayMode &&
+        (isDiceRolling || isMovementAnimationActive || isTurnTransitionLocked)
+    val displayState = if (keepRollOwner && presentedRoll != null) {
+        val index = gameState.players.indexOfFirst { it.id == presentedRoll!!.playerId }
+        if (index >= 0) gameState.copy(currentPlayerIndex = index) else gameState
+    } else gameState
+    val cp = displayState.currentPlayer
+    val canRoll = !replayUiState.isReplayMode && !isTurnInputBlocked &&
+        gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL && cp.type == PlayerType.HUMAN
+    val movableSet = if (!isTurnInputBlocked && !replayUiState.isReplayMode && cp.type == PlayerType.HUMAN)
+        gameState.movablePieces.map { it.color to it.id }.toSet() else emptySet()
 
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(Color.White.copy(alpha = PLAY_AREA_BACKGROUND_OVERLAY_ALPHA))
-        )
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            if (replayUiState.isReplayMode) {
-                                "Ludo Replay"
-                            } else {
-                                "Ludo"
-                            }
-                        )
-                    },
-                    actions = {
-                        IconButton(onClick = { showFeedbackDialog = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Feedback Settings", tint = OnPrimary)
-                        }
-                        IconButton(onClick = { showQuitDialog = true }) {
-                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Quit", tint = OnPrimary)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Primary, titleContentColor = OnPrimary
-                    )
-                )
-            },
-            containerColor = Color.Transparent
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-
-            TurnIndicatorRow(gameState, setup.playerColors)
-
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    @Composable fun HistoryActions() {
+        TextButton(onClick=viewModel::undoLastAction, enabled=canUndo && !isTurnInputBlocked,
+            colors=ButtonDefaults.textButtonColors(contentColor=TabletopStyle.Paper, disabledContentColor=TabletopStyle.Muted.copy(alpha=.35f))) { Text("Undo") }
+        TextButton(onClick=viewModel::redoLastAction, enabled=canRedo && !isTurnInputBlocked,
+            colors=ButtonDefaults.textButtonColors(contentColor=TabletopStyle.Paper, disabledContentColor=TabletopStyle.Muted.copy(alpha=.35f))) { Text("Redo") }
+    }
+    Scaffold(
+        containerColor = TabletopStyle.Ink,
+        topBar = {
+            TopAppBar(
+                title = { Column {
+                    Text(if (replayUiState.isReplayMode) "LUDO / REPLAY" else "LUDO", fontWeight=FontWeight.ExtraBold, letterSpacing=3.sp)
+                    Text(if(gameState.mode == GameMode.TEAM) "LOCAL TABLE · TEAMS" else "LOCAL TABLE · ${gameState.players.count { it.isActive }} PLAYERS",
+                        fontSize=10.sp, letterSpacing=1.5.sp, color=TabletopStyle.Muted)
+                } },
+                actions = {
+                    if (landscape && !replayUiState.isReplayMode) HistoryActions()
+                    IconButton(onClick = { showFeedbackDialog = true }) {
+                        Icon(Icons.Default.Settings, "Settings", tint=TabletopStyle.Paper)
+                    }
+                    IconButton(onClick = { showQuitDialog = true }) {
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, "Leave table", tint=TabletopStyle.Paper)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor=TabletopStyle.Ink, titleContentColor=TabletopStyle.Paper)
+            )
+        }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).background(Brush.verticalGradient(listOf(TabletopStyle.Ink, Color(0xFF193E3F))))) {
             if (replayUiState.isReplayMode) {
-                ReplayControlsRow(
+                Surface(color=TabletopStyle.Paper) { ReplayControlsRow(
                     replayUiState = replayUiState,
                     isMovementAnimationActive = isMovementAnimationActive,
                     isAutoplayEnabled = replayAutoplayEnabled,
@@ -584,180 +550,39 @@ fun GameBoardScreen(
                         replayAutoplayEnabled = false
                         viewModel.replayJumpToPly(targetPly)
                     }
-                )
-            } else {
-                MoveHistoryControlsRow(
-                    canUndo = canUndo && !isTurnInputBlocked,
-                    canRedo = canRedo && !isTurnInputBlocked,
-                    onUndo = viewModel::undoLastAction,
-                    onRedo = viewModel::redoLastAction
-                )
-            }
-
-            val movableSet = gameState.movablePieces
-                .map { it.color to it.id }.toSet()
-            val piecesMap = gameState.players.associate { p -> p.color to p.pieces }
-
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                val layoutSizing = computeBoardLayoutSizing(
-                    maxWidth = maxWidth,
-                    maxHeight = maxHeight
-                )
-                val diceSize = layoutSizing.diceSize
-                val railHeight = layoutSizing.railHeight
-                val boardSize = layoutSizing.boardSize
-
-                val playersByColor = gameState.players.associateBy { it.color }
-
-                OutsideBoardPlayBackground(
-                    boardSize = boardSize,
-                    modifier = Modifier.matchParentSize()
-                )
-
-                Column(
-                    modifier = Modifier.height(boardSize + railHeight * 2),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .width(boardSize)
-                            .height(railHeight),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        playersByColor[PlayerColor.RED]?.let { player ->
-                            SideRailDice(
-                                player = player,
-                                diceValue = gameState.diceByPlayer[player.id],
-                                isCurrent = player.id == gameState.currentPlayer.id,
-                                isRollable = player.id == gameState.currentPlayer.id &&
-                                    !replayUiState.isReplayMode &&
-                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isTurnInputBlocked,
-                                onRoll = {
-                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
-                                        viewModel.rollDice()
-                                    }
-                                },
-                                size = diceSize
-                            )
-                        }
-                        playersByColor[PlayerColor.BLUE]?.let { player ->
-                            SideRailDice(
-                                player = player,
-                                diceValue = gameState.diceByPlayer[player.id],
-                                isCurrent = player.id == gameState.currentPlayer.id,
-                                isRollable = player.id == gameState.currentPlayer.id &&
-                                    !replayUiState.isReplayMode &&
-                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isTurnInputBlocked,
-                                onRoll = {
-                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
-                                        viewModel.rollDice()
-                                    }
-                                },
-                                size = diceSize
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier.size(boardSize),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        LudoBoardCanvas(
-                            allPieces = piecesMap,
-                            movablePieceIds = movableSet,
-                            animatedPieceCells = renderedAnimatedCells,
-                            movingPieceScale = movingPieceScale,
-                            playerPalette = setup.playerColors,
-                            onCellPiecesTapped = { tapped ->
-                                if (!replayUiState.isReplayMode && renderedAnimatedCells.isEmpty()) {
-                                    val decision = resolveStackTapDecision(tapped, gameState.mode)
-                                    when {
-                                        decision.autoPiece != null -> viewModel.selectPiece(decision.autoPiece)
-                                        decision.options.isNotEmpty() -> pendingStackChoice = StackMoveChoiceState(decision.options)
-                                    }
-                                }
-                            },
-                            modifier = Modifier.matchParentSize()
-                        )
-
-                        CaptureBurstOverlay(
-                            trigger = captureFxTrigger,
-                            tint = captureFxColor,
-                            modifier = Modifier.matchParentSize()
-                        )
-
-                        FinishConfettiOverlay(
-                            trigger = finishFxTrigger,
-                            tint = finishFxColor,
-                            modifier = Modifier.matchParentSize()
-                        )
-
-                        BoardSeatNamesOverlay(
-                            playersByColor = playersByColor,
-                            currentPlayerId = gameState.currentPlayer.id,
-                            playerColors = setup.playerColors,
-                            modifier = Modifier.matchParentSize()
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .width(boardSize)
-                            .height(railHeight),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        playersByColor[PlayerColor.GREEN]?.let { player ->
-                            SideRailDice(
-                                player = player,
-                                diceValue = gameState.diceByPlayer[player.id],
-                                isCurrent = player.id == gameState.currentPlayer.id,
-                                isRollable = player.id == gameState.currentPlayer.id &&
-                                    !replayUiState.isReplayMode &&
-                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isTurnInputBlocked,
-                                onRoll = {
-                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
-                                        viewModel.rollDice()
-                                    }
-                                },
-                                size = diceSize
-                            )
-                        }
-                        playersByColor[PlayerColor.YELLOW]?.let { player ->
-                            SideRailDice(
-                                player = player,
-                                diceValue = gameState.diceByPlayer[player.id],
-                                isCurrent = player.id == gameState.currentPlayer.id,
-                                isRollable = player.id == gameState.currentPlayer.id &&
-                                    !replayUiState.isReplayMode &&
-                                    gameState.turnPhase == TurnPhase.WAITING_FOR_ROLL &&
-                                    player.type == com.failureludo.engine.PlayerType.HUMAN &&
-                                    !isTurnInputBlocked,
-                                onRoll = {
-                                    if (!replayUiState.isReplayMode && !isTurnInputBlocked) {
-                                        viewModel.rollDice()
-                                    }
-                                },
-                                size = diceSize
-                            )
-                        }
-                    }
+                ) }
+            } else if (!landscape) {
+                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp), horizontalArrangement=Arrangement.SpaceBetween,
+                    verticalAlignment=Alignment.CenterVertically) {
+                    Text("FAILURE EDITION", color=TabletopStyle.Gold, fontSize=10.sp, letterSpacing=2.sp)
+                    Row { HistoryActions() }
                 }
             }
-            }
+            TabletopGameLayout(
+                state=displayState, palette=setup.playerColors,
+                diceValue=if(isDiceRolling) presentedRoll?.value else gameState.diceByPlayer[cp.id],
+                rollId=presentedRoll?.id ?: 0L, rolling=isDiceRolling,
+                reducedMotion=feedbackSettings.reducedMotion, canRoll=canRoll,
+                inputBlocked=isMovementAnimationActive || isTurnTransitionLocked,
+                onRoll=viewModel::rollDice, modifier=Modifier.fillMaxWidth().weight(1f),
+                board = { boardModifier ->
+                    TabletopBoard(
+                        pieces=gameState.players.filter { it.isActive }.associate { it.color to it.pieces },
+                        movable=movableSet, palette=setup.playerColors,
+                        animatedCells=renderedAnimatedCells, fromCells=animationFromCells,
+                        progress=movementProgress.value,
+                        onTap={ tapped ->
+                            if (!isTurnInputBlocked && !replayUiState.isReplayMode) {
+                                val decision = resolveStackTapDecision(tapped, gameState.mode)
+                                when {
+                                    decision.autoPiece != null -> viewModel.selectPiece(decision.autoPiece)
+                                    decision.options.isNotEmpty() -> pendingStackChoice = StackMoveChoiceState(decision.options)
+                                }
+                            }
+                        }, modifier=boardModifier
+                    )
+                }
+            )
         }
     }
 }
@@ -939,20 +764,17 @@ private fun buildAnimationPlan(
             return@mapNotNull null
         }
 
-        val pathCells = computePieceAnimationCells(
-            color = key.first,
-            pieceId = key.second,
-            start = startPosition,
-            end = endPosition
+        // A captured piece returns directly to its dock after contact, not around the track.
+        val returnCells = listOfNotNull(
+            pieceCell(key.first, key.second, startPosition),
+            pieceCell(key.first, key.second, endPosition)
         )
-        if (pathCells.size <= 1) return@mapNotNull null
-
-        val acceleratedCaptureCells = accelerateCapturedReturnPath(pathCells)
+        if (returnCells.size != 2) return@mapNotNull null
 
         val delayedPath = if (captureLeadFrames > 0) {
-            List(captureLeadFrames) { acceleratedCaptureCells.first() } + acceleratedCaptureCells
+            List(captureLeadFrames) { returnCells.first() } + returnCells
         } else {
-            acceleratedCaptureCells
+            returnCells
         }
 
         key to delayedPath
@@ -963,25 +785,6 @@ private fun buildAnimationPlan(
         movingPieceStepCount = movedStepCount,
         hasCapture = capturedPaths.isNotEmpty()
     )
-}
-
-private fun accelerateCapturedReturnPath(pathCells: List<Pair<Int, Int>>): List<Pair<Int, Int>> {
-    if (pathCells.size < CAPTURE_RETURN_ACCELERATION_THRESHOLD) return pathCells
-
-    val accelerated = mutableListOf<Pair<Int, Int>>()
-    accelerated += pathCells.first()
-
-    var index = 1
-    while (index < pathCells.lastIndex) {
-        accelerated += pathCells[index]
-        index += 2
-    }
-
-    if (accelerated.last() != pathCells.last()) {
-        accelerated += pathCells.last()
-    }
-
-    return accelerated
 }
 
 @Composable
@@ -1211,50 +1014,6 @@ private fun pieceCell(color: PlayerColor, pieceId: Int, position: PiecePosition)
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun TurnIndicatorRow(state: GameState, playerColors: Map<PlayerColor, Color>) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        state.players.filter { it.isActive }.forEach { player ->
-            val isCurrent = player.id == state.currentPlayer.id
-            PlayerChip(player = player, isActive = isCurrent, playerColors = playerColors)
-        }
-    }
-}
-
-@Composable
-private fun MoveHistoryControlsRow(
-    canUndo: Boolean,
-    canRedo: Boolean,
-    onUndo: () -> Unit,
-    onRedo: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        OutlinedButton(
-            onClick = onUndo,
-            enabled = canUndo,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text("Undo")
-        }
-
-        OutlinedButton(
-            onClick = onRedo,
-            enabled = canRedo,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text("Redo")
-        }
-    }
-}
-
-@Composable
 private fun ReplayControlsRow(
     replayUiState: ReplayUiState,
     isMovementAnimationActive: Boolean,
@@ -1362,304 +1121,6 @@ private fun ReplayControlsRow(
 }
 
 @Composable
-private fun PlayerChip(
-    player: com.failureludo.engine.Player,
-    isActive: Boolean,
-    playerColors: Map<PlayerColor, Color>
-) {
-    val selectedColor = playerColor(player.color, playerColors)
-    val bg = if (isActive) selectedColor else selectedColor.copy(0.25f)
-
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(bg)
-            .semantics {
-                contentDescription = buildString {
-                    append(player.name)
-                    append(if (isActive) ", current turn" else ", waiting")
-                    if (player.finishedPieceCount > 0) {
-                        append(", ${player.finishedPieceCount} finished pawns")
-                    }
-                }
-            }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            player.name,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (isActive) Color.White else Color.White.copy(0.7f),
-            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        // Finished piece count
-        if (player.finishedPieceCount > 0) {
-            Box(
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(0.3f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    player.finishedPieceCount.toString(),
-                    style = MaterialTheme.typography.labelLarge.copy(
-                        fontSize = 10.sp
-                    ),
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SideRailDice(
-    player: com.failureludo.engine.Player,
-    diceValue: Int?,
-    isCurrent: Boolean,
-    isRollable: Boolean,
-    onRoll: () -> Unit,
-    size: androidx.compose.ui.unit.Dp
-) {
-    Column(
-        modifier = Modifier.semantics {
-            val turnState = if (isCurrent) "current turn" else "waiting"
-            val diceLabel = diceValue?.toString() ?: "not rolled"
-            contentDescription = "${player.name}, $turnState, dice $diceLabel"
-        },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Box(contentAlignment = Alignment.TopCenter) {
-            DiceView(
-                diceValue = diceValue,
-                isRollable = isRollable,
-                isCurrentTurn = isCurrent,
-                onRoll = onRoll,
-                size = size,
-                contentDescription = if (isRollable) {
-                    "Roll dice for ${player.name}"
-                } else {
-                    "Dice for ${player.name}"
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun BoardSeatNamesOverlay(
-    playersByColor: Map<PlayerColor, com.failureludo.engine.Player>,
-    currentPlayerId: PlayerId,
-    playerColors: Map<PlayerColor, Color>,
-    modifier: Modifier = Modifier
-) {
-    Box(modifier = modifier) {
-        PlayerColor.entries.forEach { color ->
-            val player = playersByColor[color] ?: return@forEach
-            val isCurrent = player.id == currentPlayerId
-
-            val alignment = when (color) {
-                PlayerColor.RED -> Alignment.TopStart
-                PlayerColor.BLUE -> Alignment.TopEnd
-                PlayerColor.YELLOW -> Alignment.BottomEnd
-                PlayerColor.GREEN -> Alignment.BottomStart
-            }
-
-            SeatCornerNameBadge(
-                player = player,
-                isCurrent = isCurrent,
-                tint = playerColor(color, playerColors),
-                modifier = Modifier
-                    .align(alignment)
-                    .padding(8.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun OutsideBoardPlayBackground(
-    boardSize: Dp,
-    modifier: Modifier = Modifier
-) {
-    Box(modifier = modifier) {
-        // Keep the square board zone clean so the board rendering is unchanged.
-        Box(
-            modifier = Modifier
-                .size(boardSize)
-                .align(Alignment.Center)
-                .background(Background)
-        )
-    }
-}
-
-@Composable
-private fun SplitEdgePlayBackground(
-    modifier: Modifier = Modifier
-) {
-    val backgroundImage = ImageBitmap.imageResource(id = R.drawable.ludo_board_background)
-
-    Canvas(modifier = modifier) {
-        val srcHalfHeight = (backgroundImage.height / 2).coerceAtLeast(1)
-        val srcSize = IntSize(backgroundImage.width, srcHalfHeight)
-        val dstWidth = size.width.roundToInt().coerceAtLeast(1)
-        val dstHalfHeight = (srcHalfHeight * (size.width / backgroundImage.width.toFloat()))
-            .roundToInt()
-            .coerceAtLeast(1)
-
-        drawImage(
-            image = backgroundImage,
-            srcOffset = IntOffset(0, 0),
-            srcSize = srcSize,
-            dstOffset = IntOffset(0, 0),
-            dstSize = IntSize(dstWidth, dstHalfHeight),
-            alpha = PLAY_AREA_BACKGROUND_IMAGE_ALPHA
-        )
-
-        drawImage(
-            image = backgroundImage,
-            srcOffset = IntOffset(0, backgroundImage.height - srcHalfHeight),
-            srcSize = srcSize,
-            dstOffset = IntOffset(0, (size.height - dstHalfHeight).roundToInt()),
-            dstSize = IntSize(dstWidth, dstHalfHeight),
-            alpha = PLAY_AREA_BACKGROUND_IMAGE_ALPHA
-        )
-    }
-}
-
-@Composable
-private fun SeatCornerNameBadge(
-    player: com.failureludo.engine.Player,
-    isCurrent: Boolean,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    val badgeBackground = if (isCurrent) {
-        tint.copy(alpha = 0.86f)
-    } else {
-        tint.copy(alpha = 0.62f)
-    }
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(badgeBackground)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .semantics {
-                contentDescription = buildString {
-                    append(player.name)
-                    append(if (isCurrent) ", current turn" else ", waiting")
-                }
-            }
-    ) {
-        Text(
-            text = player.name,
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun CaptureBurstOverlay(
-    trigger: Int,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    val progress = remember { Animatable(1f) }
-
-    LaunchedEffect(trigger) {
-        if (trigger <= 0) return@LaunchedEffect
-        progress.snapTo(0f)
-        progress.animateTo(1f, animationSpec = tween(durationMillis = 420))
-    }
-
-    val p = progress.value
-    val alpha = (1f - p).coerceIn(0f, 1f)
-    if (alpha <= 0.01f) return
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val ringRadius = size.minDimension * (0.12f + p * 0.22f)
-
-            drawCircle(
-                color = tint.copy(alpha = 0.22f * alpha),
-                radius = ringRadius,
-                center = center
-            )
-            drawCircle(
-                color = tint.copy(alpha = 0.9f * alpha),
-                radius = ringRadius,
-                center = center,
-                style = Stroke(width = size.minDimension * 0.012f)
-            )
-        }
-
-        Text(
-            text = "💥",
-            style = MaterialTheme.typography.headlineMedium,
-            fontSize = (30f * (1f + p * 0.22f)).sp,
-            color = Color.White.copy(alpha = alpha)
-        )
-    }
-}
-
-@Composable
-private fun FinishConfettiOverlay(
-    trigger: Int,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    val progress = remember { Animatable(1f) }
-
-    LaunchedEffect(trigger) {
-        if (trigger <= 0) return@LaunchedEffect
-        progress.snapTo(0f)
-        progress.animateTo(1f, animationSpec = tween(durationMillis = 700))
-    }
-
-    val p = progress.value
-    val alpha = (1f - p).coerceIn(0f, 1f)
-    if (alpha <= 0.01f) return
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val centerX = center.x
-            val centerY = center.y
-            val minDim = size.minDimension
-
-            repeat(12) { index ->
-                val angle = (2f * PI.toFloat() * index) / 12f
-                val distance = minDim * (0.12f + p * 0.32f)
-                val dotX = centerX + cos(angle) * distance
-                val dotY = centerY + sin(angle) * distance
-
-                drawCircle(
-                    color = tint.copy(alpha = alpha),
-                    radius = minDim * (0.012f - (p * 0.004f)).coerceAtLeast(minDim * 0.006f),
-                    center = Offset(dotX, dotY)
-                )
-            }
-        }
-
-        Text(
-            text = "✨",
-            style = MaterialTheme.typography.headlineMedium,
-            fontSize = (26f * (1f + p * 0.16f)).sp,
-            color = Color.White.copy(alpha = alpha)
-        )
-    }
-}
-
-@Composable
 private fun FeedbackSettingsDialog(
     settings: FeedbackSettings,
     onSettingsChange: (FeedbackSettings) -> Unit,
@@ -1670,7 +1131,7 @@ private fun FeedbackSettingsDialog(
         onDismissRequest = onDismiss,
         title = { Text("Game Feedback") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1690,11 +1151,11 @@ private fun FeedbackSettingsDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Music")
+                    Text("Reduced motion")
                     Switch(
-                        checked = settings.musicEnabled,
+                        checked = settings.reducedMotion,
                         onCheckedChange = { enabled ->
-                            onSettingsChange(settings.copy(musicEnabled = enabled))
+                            onSettingsChange(settings.copy(reducedMotion = enabled))
                         }
                     )
                 }

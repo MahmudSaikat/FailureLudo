@@ -1,231 +1,53 @@
 package com.failureludo.ui.screens
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.failureludo.data.auth.UserProfile
+import com.failureludo.ui.tabletop.*
 import com.failureludo.ui.theme.*
 
 @Composable
-fun HomeScreen(
-    onNewGame: () -> Unit,
-    onResume: () -> Unit,
-    onHistory: () -> Unit,
-    onSignIn: () -> Unit,
-    onPlayOnline: () -> Unit,
-    hasActiveGame: Boolean,
-    hasHistoryRecords: Boolean,
-    isSessionRestored: Boolean,
-    userProfile: UserProfile?
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Background),
-        contentAlignment = Alignment.Center
-    ) {
-        // User chip — top-right corner
-        userProfile?.let { profile ->
-            Row(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 48.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PhoneAndroid,
-                    contentDescription = "Android",
-                    tint = Secondary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = profile.name,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Secondary
-                )
-                if (profile.isGuest) {
-                    TextButton(
-                        onClick = onSignIn,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Text(
-                            text = "Sign in",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Primary
-                        )
-                    }
+fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Unit,
+    hasActiveGame: Boolean, hasHistoryRecords: Boolean, isSessionRestored: Boolean) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(TabletopStyle.Ink,TabletopStyle.Panel)))
+        .safeDrawingPadding(), contentAlignment=Alignment.Center) {
+        Column(Modifier.widthIn(max=420.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp),
+            horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement=Arrangement.spacedBy(18.dp)) {
+            Text("THE LOCAL TABLE",color=TabletopStyle.Gold,fontSize=11.sp,letterSpacing=3.sp)
+            TabletopDice(5,0L,false,false,false,{ },Modifier.size(100.dp))
+            Text("LUDO",color=TabletopStyle.Paper,fontSize=64.sp,fontWeight=FontWeight.Black,letterSpacing=8.sp)
+            Text("Failure Edition",color=TabletopStyle.Muted,fontSize=18.sp)
+            Spacer(Modifier.height(24.dp))
+            if(!isSessionRestored) CircularProgressIndicator(color=TabletopStyle.Gold)
+            else {
+                if(hasActiveGame) Button(onClick=onResume,modifier=Modifier.fillMaxWidth().height(56.dp),
+                    shape=RoundedCornerShape(16.dp),colors=ButtonDefaults.buttonColors(containerColor=TabletopStyle.Gold,contentColor=TabletopStyle.Ink)) {
+                    Text("Resume your game",fontWeight=FontWeight.Bold)
+                }
+                Button(onClick=onNewGame,modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(16.dp),
+                    colors=ButtonDefaults.buttonColors(containerColor=TabletopStyle.Paper,contentColor=TabletopStyle.Ink)) {
+                    Text("New game",fontWeight=FontWeight.Bold)
+                }
+                if(hasHistoryRecords) TextButton(onClick=onHistory) { Text("Game history",color=TabletopStyle.Muted) }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {
+                listOf(LudoRed,LudoBlue,LudoYellow,LudoGreen).forEachIndexed { index,tint ->
+                    Canvas(Modifier.size(18.dp)) { drawIdentity(center,size.width*.32f,tint,index) }
                 }
             }
-        }
-
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            modifier = Modifier.padding(32.dp)
-        ) {
-
-            // Title Section
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "🎲",
-                    fontSize = 72.sp
-                )
-                Text(
-                    text = "LUDO",
-                    style = MaterialTheme.typography.displayLarge,
-                    color = Primary,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 6.sp
-                )
-                Text(
-                    text = "Failure Edition",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Secondary,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action Buttons
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (!isSessionRestored) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                } else if (hasActiveGame) {
-                    Button(
-                        onClick = onResume,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                    ) {
-                        Text(
-                            text = "Resume Game",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = OnPrimary
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = onNewGame,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
-                    ) {
-                        Text(
-                            text = "New Game",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-
-                    if (hasHistoryRecords) {
-                        OutlinedButton(
-                            onClick = onHistory,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
-                        ) {
-                            Text(
-                                text = "Game History",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                    }
-                } else {
-                    Button(
-                        onClick = onNewGame,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                    ) {
-                        Text(
-                            text = "New Game",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = OnPrimary
-                        )
-                    }
-
-                    if (hasHistoryRecords) {
-                        OutlinedButton(
-                            onClick = onHistory,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
-                        ) {
-                            Text(
-                                text = "Game History",
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Play Online button
-            OutlinedButton(
-                onClick = onPlayOnline,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary)
-            ) {
-                Text(
-                    text = "Play Online",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Colour patch row (purely decorative)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.clip(RoundedCornerShape(12.dp))
-            ) {
-                listOf(LudoRed, LudoBlue, LudoYellow, LudoGreen).forEach { color ->
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(color)
-                    )
-                }
-            }
+            Text("Pass & play  ·  Play against bots",color=TabletopStyle.Muted,fontSize=12.sp)
         }
     }
 }
