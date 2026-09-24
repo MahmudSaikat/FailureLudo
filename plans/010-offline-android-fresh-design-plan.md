@@ -1,6 +1,6 @@
 # 010 — Fresh offline Android design plan
 
-Status: first playable Android prototype implemented; modern tactile tabletop is the working direction, pending visual review.
+Status: user-directed board, corner dice, pawn, and capture refinements implemented; original “faaah” capture audio restored; device review pending.
 Scope: native Android only, on `feat/offline-improvements`.
 Goal: [perfect, release, and play the offline app first](009-offline-android-redesign-goal.md).
 
@@ -57,13 +57,13 @@ whose turn it is, the die result, and what they can interact with.
 2. Compact upper player rail, aligned with the upper home areas.
 3. Large square board with a modest frame.
 4. Compact lower player rail, aligned with the lower home areas.
-5. Stable action area containing the active player's die and one short status line.
+5. One short status line; dice live in the four corner player panels (September 24 refinement).
 
 Player panels show a name, color/symbol, human/bot identity, and finished-pawn count.
 The active panel gains a clear turn marker. Inactive players remain readable. Team mode
 shows the teammate relationship explicitly. Empty seats look intentionally unused.
 
-The active die occupies a predictable place. Its accent and adjacent name identify its owner.
+Each player has a fixed corner die, and only the active player can roll. Its accent and adjacent name identify its owner.
 A die result remains attributed to the player who rolled it until the next turn presentation
 is ready. No previous result should appear to belong to the next player.
 
@@ -93,7 +93,7 @@ Final placement should follow prototype testing, especially one-handed use and p
 
 Design one recognizable silhouette: a rounded head, tapered body, stable base, and contact shadow.
 Create a consistent set of states: resting, selectable, pressed, moving, captured, and finished.
-Selectable pawns receive a clear base marker; avoid making every piece continually pulse.
+Selectable pawns pulse gently, with a small base highlight. Idle pawns stay still; reduced motion keeps only the steady highlight.
 
 Pairs must visibly read as linked. A pair plus an independent single must remain distinguishable.
 Mixed-color teammate pairs need both identities visible. Crowded safe squares use a compact,
@@ -114,9 +114,9 @@ validate on a device, not fixed requirements.
 | Moment | Proposed treatment | Initial timing |
 | --- | --- | --- |
 | Die roll | Brief lift, convincing tumble, contact, readable settled face | 450–650 ms total |
-| Pawn step | Smooth travel with a small hop and moving shadow; continuous corners | 80–120 ms per cell |
+| Pawn step | Higher hop, small landing rebound, squash and moving shadow | 130 ms per cell |
 | Landing | Small settle, one synchronized contact sound | 80–120 ms |
-| Capture | Contact first, brief impact, captured pawn returns to its dock | 250–400 ms after contact |
+| Capture | Local impact/recoil, then reverse along the track to the original dock without hops | 160 ms hold, 80 ms per return cell; 440 ms overlapping impact effect |
 | Finish | Pawn arrives, progress updates, localized celebration | 350–550 ms |
 | Turn handoff | Active marker transfers after the move resolves | 120–180 ms |
 
@@ -330,3 +330,63 @@ Validation: debug APK builds; 66 Android unit tests and 73 engine tests pass. An
 emulator UI smoke test passed in airplane mode through setup, a settled dice roll, landscape
 rotation, and feedback settings. [Screenshots and build handoff](../design/prototypes/README.md).
 Full-game and physical-device validation remain open.
+
+## September 24 user refinement — implementation and review
+
+The user's review replaces the single-die tray and mostly white courtyard direction above.
+Keep the sculpted pawn silhouette and make the board feel fuller and more prominent,
+using Ludo King/Ludo Club as composition references. Native offline scope and rules remain unchanged.
+
+### Usage-conscious implementation order
+
+These are rough shares of this task's effort, not percentages of the account usage allowance.
+
+| Work | Estimated share |
+| --- | ---: |
+| Planning and focused inspection | 5% |
+| Larger board and four corner dice | 23% |
+| Richer home courtyard artwork | 12% |
+| Larger pawns and legal-move pulse | 12% |
+| Bouncy normal movement | 10% |
+| Capture impact and backward return | 23% |
+| Exact echo “faaah” asset integration | 5% |
+| Combined verification and APK handoff | 10% |
+
+Implementation combines layout/artwork/pawns first, then movement/capture. Reuse existing
+Compose rendering, touch geometry, route helpers, and sound playback. Keep checks batched;
+the user handles visual/device/listening review. No generated bitmap assets or emulator
+screenshot iteration is required for this pass.
+
+### Implemented
+
+- Four stable corner seats, each with a 48 dp die; only the current player's roll action is enabled.
+  Roll ownership persists through animation. Unrolled dice have blank faces, while past rolls
+  stay on the correct player's die. Empty seats keep their position.
+- Removed the separate large dice tray and thick clipped board frame; outer horizontal padding
+  is 4 dp. Portrait measures the player rows first and gives remaining space to the square board.
+  Landscape puts the board between two columns of corner seats.
+- Stronger colored courtyard interiors with an engraved rosette, inset borders, and lighter docks;
+  light track cells and safe markers stay legible.
+- Existing pawn artwork is 28% larger without changing tap geometry. Only legal pawns pulse
+  (1.0–1.1 scale); a small base highlight replaces the bubble rings. Reduced motion is steady.
+- Normal steps take 130 ms with a higher hop, small rebound, and landing squash. Pair links
+  interpolate with the pieces.
+- Capture starts at contact: local burst/echo rings and victim recoil, then an 80 ms-per-cell
+  backward return to the color's entry and the specific pawn dock. Return movement has no bounce.
+  Input remains gated through the sequence; subsequent audio waits for actual completion.
+- Restored the previous default “faaah” recording from the existing `sfx_capture.ogg` at impact,
+  through an offline feedback override. The other tabletop sounds remain in use. The repository
+  also retains `fahhh_kcgaxfs.mp3`; commit `2674a77` identifies the shipped capture sound as
+  “tut tut faah”. No new recording was downloaded or synthesized. User listening review remains.
+
+### Validation and manual handoff
+
+- Passed: debug APK build and all 143 unit tests (70 app, 73 engine; engine checks reused unchanged Gradle results).
+- Combined command: `./gradlew :app:testDebugUnitTest :game-engine:test :app:assembleDebug --offline --console=plain`.
+- New regression cases exercise real captures for all four colors, reverse routing across index zero,
+  exact pawn docks, waiting for attacker contact, ordinary moves, and no animations on restore/undo.
+- Device/visual/audio checks are delegated to the user. Check portrait and landscape board size,
+  corner dice ownership, crowded stack selection, pulse visibility, hop strength, short/long captures,
+  mute/reduced motion, and resume/undo/replay after a capture.
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Existing prototype screenshots show the
+  previous design and were intentionally not regenerated. This is a review build, not a release.

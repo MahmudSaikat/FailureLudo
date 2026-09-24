@@ -114,7 +114,7 @@ fun TabletopDice(value: Int?, rollId: Long, rolling: Boolean, reducedMotion: Boo
                 5 -> listOf(-.48f to -.48f, -.48f to .48f, 0f to 0f, .48f to -.48f, .48f to .48f)
                 else -> listOf(-.48f to -.48f, -.48f to 0f, -.48f to .48f, .48f to -.48f, .48f to 0f, .48f to .48f)
             }
-            dots.forEach { (u,v) ->
+            (if (value == null) emptyList() else dots).forEach { (u,v) ->
                 val dot = polygon(List(20) { i ->
                     val a=i*PI.toFloat()*2/20
                     face.normal + face.u*(u+cos(a)*.13f) + face.v*(v+sin(a)*.13f)

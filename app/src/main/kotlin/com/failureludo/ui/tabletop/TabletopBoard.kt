@@ -2,7 +2,10 @@ package com.failureludo.ui.tabletop
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -13,6 +16,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -48,8 +54,19 @@ fun TabletopBoard(
     fromCells: Map<Pair<PlayerColor, Int>, Pair<Int, Int>>,
     progress: Float,
     onTap: (TappedCellPieces) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    reducedMotion: Boolean = false,
+    capturedKeys: Set<Pair<PlayerColor, Int>> = emptySet(),
+    captureCells: List<Pair<Int, Int>> = emptyList(),
+    captureProgress: Float = 1f
 ) {
+    // Only selectable pawns keep a frame clock alive; draw-time reads avoid recomposition.
+    val pulse: State<Float> = if (movable.isNotEmpty() && !reducedMotion) {
+        rememberInfiniteTransition(label = "Legal pawn pulse").animateFloat(
+            initialValue = 1f, targetValue = 1.10f,
+            animationSpec = infiniteRepeatable(tween(650, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "Pawn scale")
+    } else rememberUpdatedState(1f)
     val legalPieces = pieces.values.flatten().filter { it.color to it.id in movable }
     Canvas(modifier
         .semantics {
@@ -76,10 +93,18 @@ fun TabletopBoard(
         drawTable(c, palette)
         val visible = pieces.mapValues { (_, pawns) -> pawns.filter { !it.isFinished || it.color to it.id in animatedCells } }
         val layouts = buildPieceLayouts(visible, movable, animatedCells, c, size.width)
-        // Linked pairs are recognizable even when the two members have different colors.
+        fun travelOffset(key: Pair<PlayerColor, Int>): Offset {
+            val to = animatedCells[key] ?: return Offset.Zero
+            val from = fromCells[key] ?: return Offset.Zero
+            return Offset((from.second - to.second) * c * (1f - progress),
+                (from.first - to.first) * c * (1f - progress))
+        }
+        // Pair links travel with their pawns instead of jumping ahead to the destination.
         layouts.filter { it.piece.pairKey != null }.groupBy { it.piece.pairKey }.values.forEach { pair ->
             if (pair.size == 2 && pair[0].cell == pair[1].cell) {
-                drawLine(TabletopStyle.Ink.copy(alpha = .65f), pair[0].center, pair[1].center,
+                drawLine(TabletopStyle.Ink.copy(alpha = .65f),
+                    pair[0].center + travelOffset(pair[0].piece.color to pair[0].piece.id),
+                    pair[1].center + travelOffset(pair[1].piece.color to pair[1].piece.id),
                     strokeWidth = c * .19f, cap = StrokeCap.Round)
             }
         }
@@ -88,13 +113,39 @@ fun TabletopBoard(
             val to = animatedCells[key]
             val from = fromCells[key]
             val traveling = to != null && from != null && to != from
-            val delta = if (traveling) Offset(
-                (from!!.second - to!!.second) * c * (1f - progress),
-                (from.first - to.first) * c * (1f - progress)
-            ) else Offset.Zero
-            val lift = if (traveling) sin(progress * PI).toFloat() * c * .23f else 0f
-            drawPawn(layout.center + delta, layout.radius, palette[layout.piece.color] ?: Color.Red,
-                layout.isMovable, lift, layout.piece.color.ordinal)
+            val delta = travelOffset(key)
+            val captured = key in capturedKeys
+            val hopping = traveling && !captured && !reducedMotion
+            // One high hop followed by a small landing rebound, with a grounded shadow.
+            val hop = if (hopping) {
+                if (progress < .78f) sin(progress / .78f * PI).toFloat()
+                else sin((progress - .78f) / .22f * PI).toFloat() * .15f
+            } else 0f
+            val lift = hop * c * .43f
+            val at = layout.center + delta
+            val tint = palette[layout.piece.color] ?: Color.Red
+            val radius = layout.radius * 1.28f * if (layout.isMovable) pulse.value else 1f
+            if (captured && traveling && !reducedMotion) {
+                val behind = delta * .4f
+                repeat(3) { index ->
+                    drawCircle(tint.copy(alpha = .16f / (index + 1)), radius * (.6f - index * .12f),
+                        at + behind * (index + 1).toFloat())
+                }
+            }
+            val recoil = if (captured && captureProgress < .4f && !reducedMotion)
+                sin(captureProgress / .4f * PI).toFloat() * -18f else 0f
+            val squash = if (hopping && progress > .72f)
+                sin((progress - .72f) / .28f * PI).toFloat() * .12f else 0f
+            rotate(recoil, at) {
+                scale(1f + squash, 1f - squash, at + Offset(0f, radius * .65f)) {
+                    drawPawn(at, radius, tint, layout.isMovable, lift, layout.piece.color.ordinal)
+                }
+            }
+        }
+        if (!reducedMotion && captureProgress < 1f) {
+            captureCells.distinct().forEach { (row, col) ->
+                drawCaptureImpact(Offset((col + .5f) * c, (row + .5f) * c), c, captureProgress)
+            }
         }
     }
 }
@@ -111,14 +162,27 @@ private fun DrawScope.drawTable(c: Float, palette: Map<PlayerColor, Color>) {
             Size(5.56f * c, 5.56f * c), CornerRadius(c * .42f))
         drawRoundRect(Color.White.copy(alpha = .25f), corner + Offset(c * .12f, c * .12f),
             Size(5.32f * c, 5.32f * c), CornerRadius(c * .34f), style = Stroke(c * .035f))
-        drawRoundRect(TabletopStyle.Paper, Offset((col + .65f) * c, (row + .65f) * c),
+        val courtyard = Offset((col + .65f) * c, (row + .65f) * c)
+        drawRoundRect(Brush.linearGradient(listOf(lerp(tint, TabletopStyle.Paper, .40f),
+            lerp(tint, TabletopStyle.Ink, .12f))), courtyard,
             Size(4.7f * c, 4.7f * c), CornerRadius(c * .65f))
+        // Engraved corner flourishes and a rosette fill the courtyard without busy track cells.
+        val emblem = Offset((col + 3f) * c, (row + 3f) * c)
+        repeat(8) { petal ->
+            rotate(petal * 45f, emblem) {
+                drawOval(Color.White.copy(alpha = .10f), emblem + Offset(-c * .25f, -c * .92f),
+                    Size(c * .5f, c * 1.05f), style = Stroke(c * .035f))
+            }
+        }
+        drawRoundRect(Color.White.copy(alpha = .30f), courtyard + Offset(c * .12f, c * .12f),
+            Size(4.46f * c, 4.46f * c), CornerRadius(c * .53f), style = Stroke(c * .035f))
         BoardCoordinates.HOME_YARD_SPOTS.getValue(color).forEach { (r, cl) ->
             val center = Offset((cl + .5f) * c, (r + .5f) * c)
-            drawCircle(tint.copy(alpha = .13f), c * .61f, center)
-            drawCircle(tint.copy(alpha = .22f), c * .60f, center, style = Stroke(c * .04f))
+            drawCircle(TabletopStyle.Ink.copy(alpha = .18f), c * .68f, center + Offset(0f, c * .06f))
+            drawCircle(lerp(tint, TabletopStyle.Paper, .78f), c * .65f, center)
+            drawCircle(Color.White.copy(alpha = .55f), c * .65f, center, style = Stroke(c * .04f))
         }
-        drawIdentity(Offset((col + 3f) * c, (row + 3f) * c), c * .28f, tint.copy(alpha = .65f), index)
+        drawIdentity(Offset((col + 3f) * c, (row + 3f) * c), c * .32f, Color.White.copy(alpha = .85f), index)
     }
     BoardCoordinates.MAIN_TRACK.forEachIndexed { index, cell ->
         val entry = PlayerColor.entries.firstOrNull { it.entryPosition == index }
@@ -190,8 +254,9 @@ private fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: B
         at + Offset(-r*.85f, r*.43f), Size(r*1.8f, r*.65f))
     val p = at - Offset(0f, lift)
     if (selectable) {
-        drawCircle(TabletopStyle.Ink, r * 1.08f, at, style = Stroke(r*.15f))
-        drawCircle(Color.White, r * 1.23f, at, style = Stroke(r*.08f))
+        // A small base underline remains readable when reduced motion disables pulsing.
+        drawOval(Color.White.copy(alpha = .95f), at + Offset(-r * .78f, r * .58f),
+            Size(r * 1.56f, r * .34f), style = Stroke(r * .10f))
     }
     val body = Path().apply {
         moveTo(p.x-r*.35f, p.y-r*.22f)
@@ -208,4 +273,23 @@ private fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: B
     val head = p - Offset(0f, r*.46f)
     drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha=.9f), color, dark), head-Offset(r*.22f,r*.2f), r*.8f), r*.48f, head)
     drawIdentity(p+Offset(0f,r*.29f), r*.17f, Color.White.copy(alpha=.9f), identity)
+}
+
+/** Expanding echo rings and a short starburst stay local to the collision cell. */
+private fun DrawScope.drawCaptureImpact(at: Offset, cell: Float, progress: Float) {
+    repeat(2) { echo ->
+        val t = ((progress - echo * .16f) / (1f - echo * .16f)).coerceIn(0f, 1f)
+        if (t > 0f && t < 1f) {
+            drawCircle(TabletopStyle.Gold.copy(alpha = (1f - t) * .8f), cell * (.3f + t * 1.15f),
+                at, style = Stroke(cell * .07f * (1f - t) + 1f))
+        }
+    }
+    repeat(8) { ray ->
+        val angle = ray * PI.toFloat() / 4f
+        val direction = Offset(cos(angle), sin(angle))
+        drawLine(TabletopStyle.Paper.copy(alpha = (1f - progress) * .95f),
+            at + direction * cell * (.25f + progress * .7f),
+            at + direction * cell * (.55f + progress * .9f),
+            cell * .07f * (1f - progress), StrokeCap.Round)
+    }
 }

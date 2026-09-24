@@ -1,19 +1,21 @@
 package com.failureludo.ui.tabletop
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.failureludo.engine.*
@@ -24,87 +26,120 @@ fun TabletopGameLayout(
     rolling: Boolean, reducedMotion: Boolean, canRoll: Boolean, inputBlocked: Boolean,
     onRoll: () -> Unit, board: @Composable (Modifier) -> Unit, modifier: Modifier = Modifier
 ) {
-    val tint = palette[state.currentPlayer.color] ?: TabletopStyle.Gold
     val status = when {
         rolling -> "Rolling…"
         inputBlocked -> "Moving…"
         state.turnPhase == TurnPhase.GAME_OVER -> "Game complete"
         state.turnPhase == TurnPhase.NO_MOVES_AVAILABLE -> "No legal moves · next turn"
         state.currentPlayer.type == PlayerType.BOT -> "Thinking…"
-        state.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION -> "Choose a marked pawn"
-        else -> "Tap the die to roll"
+        state.turnPhase == TurnPhase.WAITING_FOR_PIECE_SELECTION ->
+            if (reducedMotion) "Choose a highlighted pawn" else "Choose a pulsing pawn"
+        else -> "Tap your corner die to roll"
     }
     val players = state.players.associateBy { it.color }
-    @Composable fun Rail(colors: List<PlayerColor>, modifier: Modifier = Modifier) {
-        Row(modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            colors.forEach { color ->
-                players[color]?.let { player -> PlayerPanel(player, player.id == state.currentPlayer.id,
-                    palette[color] ?: Color.Gray, state.mode, Modifier.weight(1f)) }
-            }
-        }
+    @Composable fun Seat(color: PlayerColor, modifier: Modifier = Modifier) {
+        val player = players[color]
+        val active = player?.isActive == true && player.id == state.currentPlayer.id
+        CornerPlayer(player, color, active, palette[color] ?: Color.Gray, state.mode,
+            value = if (active) diceValue else player?.let { state.diceByPlayer[it.id] },
+            rollId = if (active) rollId else 0L, rolling = active && rolling,
+            reducedMotion = reducedMotion, enabled = active && canRoll, onRoll = onRoll,
+            modifier = modifier)
     }
-    @Composable fun Controls(modifier: Modifier = Modifier) {
-        Surface(modifier.fillMaxWidth(), color=TabletopStyle.Panel, shape=RoundedCornerShape(24.dp)) {
-            Row(Modifier.padding(horizontal=16.dp, vertical=8.dp), verticalAlignment=Alignment.CenterVertically,
-                horizontalArrangement=Arrangement.spacedBy(16.dp)) {
-                Box(Modifier.border(1.dp,tint.copy(alpha=.6f),RoundedCornerShape(20.dp)).padding(2.dp)) {
-                    TabletopDice(diceValue, rollId, rolling, reducedMotion, canRoll, onRoll)
+    @Composable fun Status(modifier: Modifier = Modifier) {
+        Text("${state.currentPlayer.name} · $status", modifier = modifier,
+            color = TabletopStyle.Muted, fontSize = 12.sp, maxLines = 1,
+            overflow = TextOverflow.Ellipsis)
+    }
+    // The board itself supplies its edge. No thick frame or clipping of oversized pawns.
+    BoxWithConstraints(modifier.padding(horizontal = 4.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+        if (maxWidth > maxHeight * 1.25f) {
+            val boardSide = minOf((maxHeight - 28.dp).coerceAtLeast(0.dp),
+                (maxWidth - 224.dp).coerceAtLeast(0.dp))
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.weight(1f).height(boardSide), verticalArrangement = Arrangement.SpaceBetween) {
+                    Seat(PlayerColor.RED)
+                    Seat(PlayerColor.GREEN)
                 }
-                Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                    Text(if(rolling) "DICE IN PLAY" else "CURRENT TURN", color=TabletopStyle.Muted,
-                        fontSize=10.sp, letterSpacing=1.8.sp, fontWeight=FontWeight.Bold)
-                    Text(state.currentPlayer.name, color=TabletopStyle.Paper, fontSize=19.sp,
-                        fontWeight=FontWeight.Bold, maxLines=1, overflow=TextOverflow.Ellipsis)
-                    Text(status, color=TabletopStyle.Muted, fontSize=12.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    board(Modifier.size(boardSide))
+                    Status(Modifier.width(boardSide).padding(top = 4.dp))
                 }
-            }
-        }
-    }
-    @Composable fun BoardFrame(boardModifier: Modifier) {
-        Surface(boardModifier, color=Color(0xFFE2D8C4), shape=RoundedCornerShape(18.dp), shadowElevation=12.dp) {
-            Box(Modifier.padding(7.dp).clip(RoundedCornerShape(12.dp))) { board(Modifier.fillMaxSize()) }
-        }
-    }
-    BoxWithConstraints(modifier.padding(horizontal=16.dp, vertical=8.dp), contentAlignment=Alignment.Center) {
-        if(maxWidth > maxHeight * 1.25f) {
-            val boardSide = minOf(maxHeight, maxWidth * .58f)
-            Row(verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(20.dp)) {
-                BoardFrame(Modifier.size(boardSide))
-                Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Rail(listOf(PlayerColor.RED,PlayerColor.BLUE))
-                    Rail(listOf(PlayerColor.GREEN,PlayerColor.YELLOW))
-                    Controls()
+                Column(Modifier.weight(1f).height(boardSide), verticalArrangement = Arrangement.SpaceBetween) {
+                    Seat(PlayerColor.BLUE)
+                    Seat(PlayerColor.YELLOW)
                 }
             }
         } else {
-            val boardSide = minOf(maxWidth, (maxHeight-242.dp).coerceAtLeast(100.dp))
-            Column(horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                Rail(listOf(PlayerColor.RED,PlayerColor.BLUE))
-                BoardFrame(Modifier.size(boardSide))
-                Rail(listOf(PlayerColor.GREEN,PlayerColor.YELLOW))
-                Controls()
+            // Measure text/player rows first, including font scaling, and give all remaining
+            // space to the square board. Four seat positions remain stable in 2/3-player games.
+            Layout(content = {
+                Seat(PlayerColor.RED)
+                Seat(PlayerColor.BLUE)
+                Seat(PlayerColor.GREEN)
+                Seat(PlayerColor.YELLOW)
+                Status()
+                board(Modifier)
+            }, modifier = Modifier.fillMaxSize()) { measurables, constraints ->
+                val gap = 4.dp.roundToPx()
+                val seatWidth = ((constraints.maxWidth - gap) / 2).coerceAtLeast(0)
+                val seats = measurables.take(4).map {
+                    it.measure(Constraints(maxWidth = seatWidth, maxHeight = constraints.maxHeight))
+                }
+                val statusLine = measurables[4].measure(Constraints(maxWidth = constraints.maxWidth))
+                val topHeight = maxOf(seats[0].height, seats[1].height)
+                val bottomHeight = maxOf(seats[2].height, seats[3].height)
+                val side = minOf(constraints.maxWidth,
+                    (constraints.maxHeight - topHeight - bottomHeight - statusLine.height - gap * 3).coerceAtLeast(0))
+                val boardPlaceable = measurables[5].measure(Constraints.fixed(side, side))
+                val totalHeight = topHeight + side + bottomHeight + statusLine.height + gap * 3
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    val top = ((constraints.maxHeight - totalHeight) / 2).coerceAtLeast(0)
+                    seats[0].placeRelative(0, top)
+                    seats[1].placeRelative(constraints.maxWidth - seats[1].width, top)
+                    boardPlaceable.placeRelative((constraints.maxWidth - side) / 2, top + topHeight + gap)
+                    val bottom = top + topHeight + side + gap * 2
+                    seats[2].placeRelative(0, bottom)
+                    seats[3].placeRelative(constraints.maxWidth - seats[3].width, bottom)
+                    statusLine.placeRelative((constraints.maxWidth - statusLine.width) / 2,
+                        bottom + bottomHeight + gap)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PlayerPanel(player: Player, active: Boolean, tint: Color, mode: GameMode, modifier: Modifier) {
-    val edge = if(active && player.isActive) TabletopStyle.Gold else Color.White.copy(alpha=.10f)
-    Row(modifier.heightIn(min=52.dp).border(1.dp,edge,RoundedCornerShape(14.dp))
-        .background(if(active && player.isActive) TabletopStyle.Panel else Color.Transparent,RoundedCornerShape(14.dp))
-        .padding(horizontal=10.dp,vertical=8.dp), verticalAlignment=Alignment.CenterVertically,
-        horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        Canvas(Modifier.size(24.dp)) { drawIdentity(center,size.width*.29f,if(player.isActive) tint else TabletopStyle.Muted.copy(alpha=.35f),player.color.ordinal) }
-        Column(Modifier.weight(1f)) {
-            Text(if(player.isActive) player.name else "Empty seat",color=if(player.isActive) TabletopStyle.Paper else TabletopStyle.Muted,
-                fontSize=12.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
-            val detail = if(!player.isActive) "—" else buildString {
-                append(if(active) "Playing" else if(player.type==PlayerType.BOT) "Bot" else "Human")
-                append(" · ${player.finishedPieceCount}/4")
-                if(mode==GameMode.TEAM) append(" · T${player.color.teamIndex+1}")
-            }
-            Text(detail,color=TabletopStyle.Muted,fontSize=10.sp,maxLines=1)
+private fun CornerPlayer(
+    player: Player?, color: PlayerColor, active: Boolean, tint: Color, mode: GameMode,
+    value: Int?, rollId: Long, rolling: Boolean, reducedMotion: Boolean,
+    enabled: Boolean, onRoll: () -> Unit, modifier: Modifier = Modifier
+) {
+    val occupied = player?.isActive == true
+    val right = color == PlayerColor.BLUE || color == PlayerColor.YELLOW
+    val shape = RoundedCornerShape(12.dp)
+    Row(modifier.fillMaxWidth().border(1.dp, if (active) tint else tint.copy(alpha = .24f), shape)
+        .background(if (active) TabletopStyle.Panel else Color.Transparent, shape)
+        .padding(horizontal = 4.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        @Composable fun Die() {
+            TabletopDice(value, rollId, rolling, reducedMotion, enabled, onRoll,
+                Modifier.size(48.dp).alpha(if (occupied) 1f else .22f)
+                    .semantics { contentDescription = "${player?.name ?: color.displayName} die" })
         }
+        if (!right) Die()
+        Column(Modifier.weight(1f)) {
+            Text(if (occupied) player!!.name else "Empty seat", color = if (occupied) TabletopStyle.Paper else TabletopStyle.Muted,
+                fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val detail = if (!occupied) "—" else buildString {
+                append(if (active) "Playing" else if (player!!.type == PlayerType.BOT) "Bot" else "Human")
+                append(" · ${player!!.finishedPieceCount}/4")
+                if (mode == GameMode.TEAM) append(" · T${color.teamIndex + 1}")
+            }
+            Text(detail, color = if (active) tint else TabletopStyle.Muted, fontSize = 10.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (right) Die()
     }
 }

@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.failureludo.R
 import com.failureludo.data.FeedbackSettings
 import com.failureludo.engine.*
 import com.failureludo.feedback.FeedbackEvent
@@ -50,6 +51,9 @@ import com.failureludo.ui.theme.*
 import com.failureludo.viewmodel.GameViewModel
 import com.failureludo.viewmodel.ReplayUiState
 import kotlin.math.roundToInt
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 internal data class BoardLayoutSizing(
     val diceSize: Dp,
@@ -58,11 +62,18 @@ internal data class BoardLayoutSizing(
 )
 
 
-private data class PieceAnimationPlan(
+private const val PAWN_STEP_MS = 130
+private const val CAPTURE_RETURN_STEP_MS = 80
+private const val CAPTURE_HOLD_MS = 160
+private const val CAPTURE_EFFECT_MS = 440
+
+internal data class PieceAnimationPlan(
     val paths: List<Pair<Pair<PlayerColor, Int>, List<Pair<Int, Int>>>> = emptyList(),
     val movingPieceStepCount: Int = 0,
-    val hasCapture: Boolean = false
-)
+    val capturedKeys: Set<Pair<PlayerColor, Int>> = emptySet()
+) {
+    val hasCapture: Boolean get() = capturedKeys.isNotEmpty()
+}
 
 internal fun computeBoardLayoutSizing(maxWidth: Dp, maxHeight: Dp): BoardLayoutSizing {
     val boardFloorByWidthClass = when {
@@ -110,7 +121,10 @@ fun GameBoardScreen(
     val isTurnTransitionLocked by viewModel.isTurnTransitionLocked.collectAsState()
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
-    val feedbackManager = remember(context) { GameFeedbackManager(context, soundPrefix = "tabletop_") }
+    val feedbackManager = remember(context) {
+        GameFeedbackManager(context, soundPrefix = "tabletop_",
+            soundOverrides = mapOf(FeedbackEvent.CAPTURE to R.raw.sfx_capture))
+    }
 
     DisposableEffect(feedbackManager) {
         onDispose {
@@ -139,6 +153,8 @@ fun GameBoardScreen(
 
     val animationFromCells = remember { mutableStateMapOf<Pair<PlayerColor, Int>, Pair<Int, Int>>() }
     val movementProgress = remember { Animatable(1f) }
+    val captureProgress = remember { Animatable(1f) }
+    var captureCells by remember { mutableStateOf<List<Pair<Int, Int>>>(emptyList()) }
     var previousEventSize by remember { mutableIntStateOf(gameState.eventLog.size) }
     var replayAutoplayEnabled by remember { mutableStateOf(false) }
     var replaySpeedIndex by remember { mutableIntStateOf(0) }
@@ -196,35 +212,52 @@ fun GameBoardScreen(
 
         if (previousPositions != null && isForwardMove) {
             if (precomputedAnimationPaths.isNotEmpty()) {
-                animatedPieceCells.clear()
-                val maxSteps = precomputedAnimationPaths.maxOf { (_, cells) -> cells.size }
-                for (stepIndex in 0 until maxSteps) {
-                    animationFromCells.clear()
-                    precomputedAnimationPaths.forEach { (key, cells) ->
-                        animationFromCells[key] = cells.getOrNull((stepIndex - 1).coerceAtLeast(0)) ?: cells.last()
-                        animatedPieceCells[key] = cells.getOrNull(stepIndex) ?: cells.last()
-                    }
-                    if (stepIndex > 0) {
-                        movementProgress.snapTo(0f)
-                        movementProgress.animateTo(1f, tween(
-                            durationMillis = if (latestFeedbackSettings.reducedMotion) 1 else
-                                if (hasCaptureDuringAnimation && stepIndex >= movingPieceStepCount) 280 else 115,
-                            easing = LinearEasing))
-                    }
-                    if (stepIndex in 1 until movingPieceStepCount) {
-                        val landingCapture = hasCaptureDuringAnimation && stepIndex == movingPieceStepCount - 1
-                        feedbackManager.emitSound(if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
-                            latestFeedbackSettings)
-                        if (landingCapture && latestFeedbackSettings.hapticsEnabled) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                try {
+                    coroutineScope {
+                        animatedPieceCells.clear()
+                        val maxSteps = precomputedAnimationPaths.maxOf { (_, cells) -> cells.size }
+                        for (stepIndex in 0 until maxSteps) {
+                            animationFromCells.clear()
+                            precomputedAnimationPaths.forEach { (key, cells) ->
+                                animationFromCells[key] = cells.getOrNull((stepIndex - 1).coerceAtLeast(0)) ?: cells.last()
+                                animatedPieceCells[key] = cells.getOrNull(stepIndex) ?: cells.last()
+                            }
+                            if (stepIndex > 0) {
+                                movementProgress.snapTo(0f)
+                                movementProgress.animateTo(1f, tween(
+                                    durationMillis = if (latestFeedbackSettings.reducedMotion) 1 else
+                                        if (hasCaptureDuringAnimation && stepIndex >= movingPieceStepCount)
+                                            CAPTURE_RETURN_STEP_MS else PAWN_STEP_MS,
+                                    easing = LinearEasing))
+                            }
+                            if (stepIndex in 1 until movingPieceStepCount) {
+                                val landingCapture = hasCaptureDuringAnimation && stepIndex == movingPieceStepCount - 1
+                                feedbackManager.emitSound(if (landingCapture) FeedbackEvent.CAPTURE else FeedbackEvent.PIECE_MOVE,
+                                    latestFeedbackSettings)
+                                if (landingCapture) {
+                                    if (latestFeedbackSettings.hapticsEnabled) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                    if (!latestFeedbackSettings.reducedMotion) {
+                                        captureCells = precomputedAnimationPlan.capturedKeys.mapNotNull { animatedPieceCells[it] }
+                                        captureProgress.snapTo(0f)
+                                        launch { captureProgress.animateTo(1f, tween(CAPTURE_EFFECT_MS, easing = LinearEasing)) }
+                                        kotlinx.coroutines.delay(CAPTURE_HOLD_MS.toLong())
+                                    }
+                                }
+                            }
                         }
                     }
+                    kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 1 else 90)
+                } finally {
+                    captureCells = emptyList()
+                    animationFromCells.clear()
+                    animatedPieceCells.clear()
                 }
-                kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 1 else 90)
-                animationFromCells.clear()
-                animatedPieceCells.clear()
             }
         } else if (previousMoveCounter >= 0L && gameState.moveCounter != previousMoveCounter) {
+            captureCells = emptyList()
+            animationFromCells.clear()
             animatedPieceCells.clear()
         }
 
@@ -244,9 +277,11 @@ fun GameBoardScreen(
         if (gameState.eventLog.size > previousEventSize && !replayUiState.isReplayMode) {
             val motionSteps = precomputedAnimationPaths.maxOfOrNull { it.second.size - 1 } ?: 0
             if (motionSteps > 0) {
-                val returnSteps = if (hasCaptureDuringAnimation) (motionSteps - (movingPieceStepCount - 1)).coerceAtLeast(0) else 0
-                kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) motionSteps.toLong()
-                    else (motionSteps - returnSteps) * 115L + returnSteps * 280L)
+                // Follow actual completion, including long returns and slow frames, rather
+                // than guessing a duration that can play extra-roll/finish cues too early.
+                snapshotFlow {
+                    previousMoveCounter == gameState.moveCounter && animatedPieceCells.isEmpty()
+                }.first { it }
             }
             else if (isDiceRolling) kotlinx.coroutines.delay(if (latestFeedbackSettings.reducedMotion) 140 else 640)
 
@@ -570,7 +605,9 @@ fun GameBoardScreen(
                         pieces=gameState.players.filter { it.isActive }.associate { it.color to it.pieces },
                         movable=movableSet, palette=setup.playerColors,
                         animatedCells=renderedAnimatedCells, fromCells=animationFromCells,
-                        progress=movementProgress.value,
+                        progress=movementProgress.value, reducedMotion=feedbackSettings.reducedMotion,
+                        capturedKeys=precomputedAnimationPlan.capturedKeys,
+                        captureCells=captureCells, captureProgress=captureProgress.value,
                         onTap={ tapped ->
                             if (!isTurnInputBlocked && !replayUiState.isReplayMode) {
                                 val decision = resolveStackTapDecision(tapped, gameState.mode)
@@ -722,7 +759,7 @@ private fun extractPiecePositions(state: GameState): Map<Pair<PlayerColor, Int>,
         .toMap()
 }
 
-private fun buildAnimationPlan(
+internal fun buildAnimationPlan(
     state: GameState,
     previousPositions: Map<Pair<PlayerColor, Int>, PiecePosition>?,
     previousMoveCounter: Long
@@ -764,12 +801,9 @@ private fun buildAnimationPlan(
             return@mapNotNull null
         }
 
-        // A captured piece returns directly to its dock after contact, not around the track.
-        val returnCells = listOfNotNull(
-            pieceCell(key.first, key.second, startPosition),
-            pieceCell(key.first, key.second, endPosition)
-        )
-        if (returnCells.size != 2) return@mapNotNull null
+        // Retrace the track to this color's entry, then slide into the original pawn dock.
+        val returnCells = computePieceAnimationCells(key.first, key.second, startPosition, endPosition)
+        if (returnCells.size <= 1) return@mapNotNull null
 
         val delayedPath = if (captureLeadFrames > 0) {
             List(captureLeadFrames) { returnCells.first() } + returnCells
@@ -783,7 +817,7 @@ private fun buildAnimationPlan(
     return PieceAnimationPlan(
         paths = movedPaths + capturedPaths,
         movingPieceStepCount = movedStepCount,
-        hasCapture = capturedPaths.isNotEmpty()
+        capturedKeys = capturedPaths.map { it.first }.toSet()
     )
 }
 

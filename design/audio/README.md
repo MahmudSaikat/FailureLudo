@@ -11,3 +11,12 @@ retained so the pack can be regenerated or retuned. All assets are bundled offli
 
 Format: mono, 22,050 Hz, 16-bit PCM WAV, with endpoint fades and peak headroom.
 Audition on device before selecting the final sonic direction.
+
+## Capture sound restored in the September 24 refinement
+
+Offline gameplay overrides the procedural `tabletop_capture.wav` with the previous default
+`sfx_capture.ogg` (the user's “faaah” recording), while keeping the remaining tabletop pack.
+The repository retains `fahhh_kcgaxfs.mp3` as well. Commit `2674a77` describes the original
+move/capture sequencing as “tut tut faah”. The clip fires once at contact alongside the new
+impact effect, using existing mute, volume, and fixed-pitch capture settings. Listening review
+is left to the user; the procedural audition asset and generator remain recoverable.

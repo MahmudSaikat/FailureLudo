@@ -5,7 +5,11 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import kotlin.random.Random
 
-class GameAudioManager(context: Context, private val soundPrefix: String = "sfx_") {
+class GameAudioManager(
+    context: Context,
+    private val soundPrefix: String = "sfx_",
+    private val soundOverrides: Map<FeedbackEvent, Int> = emptyMap()
+) {
 
     private data class EventMixConfig(
         val gain: Float,
@@ -61,7 +65,8 @@ class GameAudioManager(context: Context, private val soundPrefix: String = "sfx_
 
     private fun preloadKnownSounds() {
         soundAssetNames.forEach { (event, rawName) ->
-            val resourceId = appContext.resources.getIdentifier(rawName.replace("sfx_", soundPrefix), "raw", appContext.packageName)
+            val resourceId = soundOverrides[event] ?: appContext.resources.getIdentifier(
+                rawName.replace("sfx_", soundPrefix), "raw", appContext.packageName)
             if (resourceId != 0) {
                 loadedSoundIds[event] = soundPool.load(appContext, resourceId, 1)
             }
