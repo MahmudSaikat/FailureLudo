@@ -52,6 +52,31 @@ wholesale. Only inspect shared dependencies as needed to make the Android releas
    and incorporate feedback from actual play.
 6. Resume online development only when the user explicitly returns to it; carry over the refined design.
 
+## Google Play target API requirement — release blocker
+
+Recorded on 2026-09-24 from the Play Console notice supplied by the user.
+The notice requires this app to target **Android 16 (API level 36) or higher** and
+identifies its current Android 15 (API level 35) target as non-compliant. It gives
+**1 November 2026** as the deadline affecting the ability to publish app updates.
+This records the app-specific notice; its policy wording/date has not been independently verified.
+
+At the time of recording, `app/build.gradle.kts` has `compileSdk = 35`, `targetSdk = 35`,
+and `versionCode = 9`. Running the prototype on an Android 16 emulator does not satisfy
+the target API requirement.
+
+Before the offline production release:
+
+- [ ] Upgrade `targetSdk` to at least 36, with a compatible `compileSdk` and build toolchain.
+- [ ] Review target-API behavior changes and validate offline gameplay, lifecycle, layout,
+  audio, save/resume, and supported Android versions after the upgrade.
+- [ ] Build a signed release with an appropriate higher version code; test through an
+  internal, closed, or open testing track before production as needed.
+- [ ] Publish the compliant version to **production** with the user's publishing authorization.
+  A repository change or testing-track upload alone does not complete the notice's remedy.
+- [ ] Confirm in Play Console that the production update succeeded and the issue is cleared.
+
+This entry is a reminder only; the SDK configuration and release status have not changed.
+
 ## Current handoff
 
 Implementation has started at the user's request. A first playable native Android prototype

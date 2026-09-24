@@ -281,6 +281,8 @@ pawn states, timing, and sound cues. Keep these decisions independent of existin
 
 ### Phase D — Device polish and release
 
+- [ ] Resolve the [Play Console API 36 requirement](009-offline-android-redesign-goal.md#google-play-target-api-requirement--release-blocker): upgrade the target/build SDK, validate behavior changes, and publish a compliant production update before the user-reported 1 November 2026 deadline.
+
 - [ ] Play complete games on a compact phone and a larger screen; validate landscape and large text.
 - [ ] Check crowded stacks, mixed-color pairs, repeated die values, rapid taps, interruptions,
   undo during transitions, process recreation, and game-over sequencing.

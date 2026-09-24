@@ -26,6 +26,11 @@ layout, board, pawns, movement, dice animation, sound, and supporting screens.
 - Implementation has started: the first playable prototype uses modern tactile tabletop as a working direction, pending visual review. See plan 010 for completed work and remaining scope.
 - After the offline Android release and real play, revisit online work and carry over the finished design.
 
+## Android release requirement
+- The user supplied a Play Console notice requiring Android 16 / API 36 or higher, with a
+  1 November 2026 deadline. The app still targets API 35. Track the SDK migration, validation,
+  and compliant production publication in [plan 009](plans/009-offline-android-redesign-goal.md#google-play-target-api-requirement--release-blocker).
+
 ## Architecture reminder
 GameEngine stays pure/local. Network layer feeds opponent moves into it via Firestore real-time listeners. Moves are synced, not full state.
 
