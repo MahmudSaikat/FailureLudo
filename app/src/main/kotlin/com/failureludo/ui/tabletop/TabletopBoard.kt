@@ -37,10 +37,10 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 object TabletopStyle {
-    val Ink = Color(0xFF102C30)
-    val Panel = Color(0xFF1D3D40)
+    val Ink = Color(0xFF352440)
+    val Panel = Color(0xFF503858)
     val Paper = Color(0xFFF8F3E7)
-    val Muted = Color(0xFFADBFBA)
+    val Muted = Color(0xFFE1CEDF)
     val Gold = Color(0xFFE5C17B)
 }
 
@@ -63,7 +63,7 @@ fun TabletopBoard(
     // Only selectable pawns keep a frame clock alive; draw-time reads avoid recomposition.
     val pulse: State<Float> = if (movable.isNotEmpty() && !reducedMotion) {
         rememberInfiniteTransition(label = "Legal pawn pulse").animateFloat(
-            initialValue = 1f, targetValue = 1.10f,
+            initialValue = 1f, targetValue = 1.20f,
             animationSpec = infiniteRepeatable(tween(650, easing = FastOutSlowInEasing), RepeatMode.Reverse),
             label = "Pawn scale")
     } else rememberUpdatedState(1f)
@@ -151,7 +151,13 @@ fun TabletopBoard(
 }
 
 private fun DrawScope.drawTable(c: Float, palette: Map<PlayerColor, Color>) {
-    drawRect(TabletopStyle.Paper)
+    drawRect(Brush.linearGradient(listOf(Color(0xFFE999B7), Color(0xFFAAA5E8), Color(0xFF85CDBD))))
+    // A colored substrate shows through the gaps; playing cells retain their light faces.
+    palette.values.forEachIndexed { index, tint ->
+        val corners = listOf(Offset.Zero, Offset(size.width, 0f), Offset(size.width, size.height), Offset(0f, size.height))
+        drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = .42f), Color.Transparent),
+            corners[index], size.width * .72f), size.width * .72f, corners[index])
+    }
     // Solid home courtyards replace the old full-board grid.
     val origins = listOf(0 to 0, 0 to 9, 9 to 9, 9 to 0)
     PlayerColor.entries.forEachIndexed { index, color ->
@@ -187,17 +193,17 @@ private fun DrawScope.drawTable(c: Float, palette: Map<PlayerColor, Color>) {
     BoardCoordinates.MAIN_TRACK.forEachIndexed { index, cell ->
         val entry = PlayerColor.entries.firstOrNull { it.entryPosition == index }
         val tint = entry?.let { palette[it] } ?: Color(0xFFE7E3D8)
-        drawTile(cell, c, if (entry != null) tint else Color(0xFFFFFDF7))
+        drawTile(cell, c, Color(0xFFFFFDF7))
         if (index in Board.SAFE_SQUARES) {
             val center = Offset((cell.second + .5f) * c, (cell.first + .5f) * c)
-            drawStar(center, c * .24f, if (entry != null) Color.White else Color(0xFF8D9B94))
+            drawStar(center, c * .24f, if (entry != null) tint else Color(0xFF8D9B94))
         }
     }
     PlayerColor.entries.forEach { color ->
         val tint = palette[color] ?: Color.Gray
         BoardCoordinates.HOME_COLUMNS.getValue(color).forEach { cell ->
-            drawTile(cell, c, tint.copy(alpha = .75f))
-            drawCircle(Color.White.copy(alpha = .7f), c * .065f,
+            drawTile(cell, c, Color(0xFFFFFDF7))
+            drawCircle(tint, c * .13f,
                 Offset((cell.second + .5f) * c, (cell.first + .5f) * c))
         }
     }
@@ -254,7 +260,9 @@ private fun DrawScope.drawPawn(at: Offset, r: Float, color: Color, selectable: B
         at + Offset(-r*.85f, r*.43f), Size(r*1.8f, r*.65f))
     val p = at - Offset(0f, lift)
     if (selectable) {
-        // A small base underline remains readable when reduced motion disables pulsing.
+        // The glow grows with the pawn pulse and remains steady with reduced motion.
+        drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = .65f),
+            color.copy(alpha = .30f), Color.Transparent), p, r * 1.65f), r * 1.65f, p)
         drawOval(Color.White.copy(alpha = .95f), at + Offset(-r * .78f, r * .58f),
             Size(r * 1.56f, r * .34f), style = Stroke(r * .10f))
     }

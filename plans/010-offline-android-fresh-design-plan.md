@@ -390,3 +390,29 @@ screenshot iteration is required for this pass.
   mute/reduced motion, and resume/undo/replay after a capture.
 - Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Existing prototype screenshots show the
   previous design and were intentionally not regenerated. This is a review build, not a release.
+
+## September 24 follow-up — garden presentation and FLN review
+
+- Colored rose/lilac/mint board substrate now fills the gaps beneath white playing cells.
+  Entry stars and home-lane dots retain player colors on the white faces.
+- Legal pawns pulse to 1.20× with a soft white/player-color light bloom; reduced motion
+  keeps the steady highlight. Capture returns take 35 ms per cell (previously 80 ms).
+- Corner name cards and 48 dp dice trays are separate surfaces with a 6 dp gap. Only
+  the current presentation player has a visible die; other trays remain empty.
+- Route choices, stack choices, exit and feedback prompts use rounded light surfaces.
+  Illegal circulation keeps the existing engine legality check and now appears greyed out,
+  including its miniature route illustration, with a reason. It cannot be tapped.
+- Offline pages share orchid/rose controls and native, scalable botanical background art:
+  plum/lilac during play and on Home, pale lilac/rose/peach in setup/history/results.
+  Home includes a disabled empty-history action; results scroll within safe insets.
+- FLN 1.0 already encodes selected pawn ownership, home-entry deferral and roll-only moves.
+  Pairs, captures and permanent team-sharing unlock reconstruct through the current engine.
+  No format bump is needed. New documents identify rules as `2026.09.23` rather than the
+  ambiguous monthly `2026.09` label; existing files remain readable. Older histories are
+  replayed under current rules, not a historical engine, and may fail if they depended on
+  superseded behavior. No historical rules emulator is introduced.
+- Fixed replay accepting an incorrect roll-only reason. Regression tests run up to 1,200
+  deterministic rolls in each game mode through recorder, FLN serialization/parser and
+  replay, comparing complete final states; a separate test rejects a mislabeled forfeit.
+- Validation: Android debug APK and unit tests pass. Visual/device/audio testing is explicitly
+  left to the user; no emulator or screenshot generation was performed for this pass.

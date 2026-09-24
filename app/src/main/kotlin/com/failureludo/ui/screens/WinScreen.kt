@@ -1,6 +1,8 @@
 package com.failureludo.ui.screens
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -54,13 +56,13 @@ fun WinScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Background),
+            .gardenBackground(),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.padding(32.dp)
+            modifier = Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp)
         ) {
 
             // Trophy

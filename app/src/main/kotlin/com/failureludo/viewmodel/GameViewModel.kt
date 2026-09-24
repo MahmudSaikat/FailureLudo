@@ -51,7 +51,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val UNDO_HISTORY_LIMIT = 12
         private const val FLN_VERSION = "1.0"
-        private const val RULESET_VERSION = "2026.09"
+        private const val RULESET_VERSION = "2026.09.23"
         private const val TURN_TRANSITION_PADDING_MS = 280L
         private const val BOT_ROLL_DELAY_MS = 320L
     }

@@ -20,9 +20,9 @@ val BoardCream  = Color(0xFFF5F0E8)
 val SafeSquare  = Color(0xFFE0E0E0)
 
 // Material theme colours
-val Primary    = Color(0xFF5C3D2E)  // warm brown
+val Primary    = Color(0xFF76528D)  // orchid
 val OnPrimary  = Color(0xFFFFFFFF)
-val Secondary  = Color(0xFFD4A044)  // golden
-val Background = Color(0xFFF5EDDC)
+val Secondary  = Color(0xFFB66587)  // rose
+val Background = Color(0xFFFAEFF5)
 val Surface    = Color(0xFFFFFFFF)
-val OnSurface  = Color(0xFF1C1B1F)
+val OnSurface  = Color(0xFF352440)

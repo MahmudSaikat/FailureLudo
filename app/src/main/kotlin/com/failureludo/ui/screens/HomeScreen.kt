@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import com.failureludo.ui.theme.gardenBackground
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,11 +21,11 @@ import com.failureludo.ui.theme.*
 @Composable
 fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Unit,
     hasActiveGame: Boolean, hasHistoryRecords: Boolean, isSessionRestored: Boolean) {
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(TabletopStyle.Ink,TabletopStyle.Panel)))
+    Box(Modifier.fillMaxSize().gardenBackground(dark = true)
         .safeDrawingPadding(), contentAlignment=Alignment.Center) {
         Column(Modifier.widthIn(max=420.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp),
             horizontalAlignment=Alignment.CenterHorizontally, verticalArrangement=Arrangement.spacedBy(18.dp)) {
-            Text("THE LOCAL TABLE",color=TabletopStyle.Gold,fontSize=11.sp,letterSpacing=3.sp)
+            Text("A LITTLE PLAY, A LOT OF JOY",color=TabletopStyle.Gold,fontSize=11.sp,letterSpacing=3.sp)
             TabletopDice(5,0L,false,false,false,{ },Modifier.size(100.dp))
             Text("LUDO",color=TabletopStyle.Paper,fontSize=64.sp,fontWeight=FontWeight.Black,letterSpacing=8.sp)
             Text("Failure Edition",color=TabletopStyle.Muted,fontSize=18.sp)
@@ -39,7 +40,12 @@ fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Uni
                     colors=ButtonDefaults.buttonColors(containerColor=TabletopStyle.Paper,contentColor=TabletopStyle.Ink)) {
                     Text("New game",fontWeight=FontWeight.Bold)
                 }
-                if(hasHistoryRecords) TextButton(onClick=onHistory) { Text("Game history",color=TabletopStyle.Muted) }
+                OutlinedButton(onClick=onHistory, enabled=hasHistoryRecords,
+                    modifier=Modifier.fillMaxWidth().height(52.dp), shape=RoundedCornerShape(16.dp),
+                    colors=ButtonDefaults.outlinedButtonColors(contentColor=TabletopStyle.Paper,
+                        disabledContentColor=TabletopStyle.Muted.copy(alpha=.45f))) {
+                    Text(if (hasHistoryRecords) "Your games & replays" else "No saved games yet")
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {

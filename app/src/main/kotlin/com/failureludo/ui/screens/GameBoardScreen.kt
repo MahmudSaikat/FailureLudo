@@ -28,6 +28,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import com.failureludo.ui.tabletop.*
+import androidx.compose.ui.draw.alpha
+import com.failureludo.ui.theme.gardenBackground
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -63,7 +65,7 @@ internal data class BoardLayoutSizing(
 
 
 private const val PAWN_STEP_MS = 130
-private const val CAPTURE_RETURN_STEP_MS = 80
+private const val CAPTURE_RETURN_STEP_MS = 35
 private const val CAPTURE_HOLD_MS = 160
 private const val CAPTURE_EFFECT_MS = 440
 
@@ -374,6 +376,10 @@ fun GameBoardScreen(
 
     if (showQuitDialog) {
         AlertDialog(
+            shape = RoundedCornerShape(28.dp),
+            containerColor = Color(0xFFFFF8FC),
+            titleContentColor = Color(0xFF352440),
+            textContentColor = Color(0xFF55455D),
             onDismissRequest = { showQuitDialog = false },
             title   = { Text(if (replayUiState.isReplayMode) "Exit Replay?" else "Quit Game?") },
             text    = {
@@ -425,8 +431,12 @@ fun GameBoardScreen(
             pendingHomeEntryChoicePiece!!.color, gameState.players, gameState.mode
         )
         AlertDialog(
+            shape = RoundedCornerShape(28.dp),
+            containerColor = Color(0xFFFFF8FC),
+            titleContentColor = Color(0xFF352440),
+            textContentColor = Color(0xFF55455D),
             onDismissRequest = { viewModel.dismissHomeEntryChoice() },
-            title = { Text("Choose Pawn Path") },
+            title = { Text("Choose your route", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("This move can enter the finishing path. Choose how this pawn should continue.")
@@ -456,8 +466,12 @@ fun GameBoardScreen(
 
     pendingStackChoice?.let { choiceState ->
         AlertDialog(
+            shape = RoundedCornerShape(28.dp),
+            containerColor = Color(0xFFFFF8FC),
+            titleContentColor = Color(0xFF352440),
+            textContentColor = Color(0xFF55455D),
             onDismissRequest = { pendingStackChoice = null },
-            title = { Text("Choose Pawn Move") },
+            title = { Text("Choose your pawn", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Select which move to play from this stack.")
@@ -548,7 +562,7 @@ fun GameBoardScreen(
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).background(Brush.verticalGradient(listOf(TabletopStyle.Ink, Color(0xFF193E3F))))) {
+        Column(Modifier.fillMaxSize().padding(padding).gardenBackground(dark = true)) {
             if (replayUiState.isReplayMode) {
                 Surface(color=TabletopStyle.Paper) { ReplayControlsRow(
                     replayUiState = replayUiState,
@@ -834,20 +848,21 @@ private fun HomeEntryOptionPreviewCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .alpha(if (enabled) 1f else .48f)
+            .clip(RoundedCornerShape(20.dp))
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
                 onClickLabel = title,
                 onClick = onClick
             )
-            .background(tint.copy(alpha = 0.12f))
+            .background(if (enabled) tint.copy(alpha = 0.12f) else Color(0xFFE1DDE2))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         HomeEntryPathMiniPreview(
-            tint = tint,
+            tint = if (enabled) tint else Color.Gray,
             enterHomePath = enterHomePath,
             modifier = Modifier
                 .width(76.dp)
@@ -859,7 +874,7 @@ private fun HomeEntryOptionPreviewCard(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = tint.copy(alpha = 0.95f)
+                color = if (enabled) tint.copy(alpha = 0.95f) else Color.DarkGray
             )
             Text(
                 text = description,
@@ -1162,6 +1177,8 @@ private fun FeedbackSettingsDialog(
     onDismiss: () -> Unit
 ) {
     AlertDialog(
+        shape = RoundedCornerShape(28.dp),
+        containerColor = Color(0xFFFFF8FC),
         onDismissRequest = onDismiss,
         title = { Text("Game Feedback") },
         text = {

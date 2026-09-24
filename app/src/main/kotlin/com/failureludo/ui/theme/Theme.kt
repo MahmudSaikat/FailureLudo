@@ -2,6 +2,9 @@ package com.failureludo.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
@@ -30,7 +33,7 @@ private val DarkColors = darkColorScheme(
 
 @Composable
 fun FailureLudoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = false,
     forceLightSystemBarIcons: Boolean = false,
     content: @Composable () -> Unit
 ) {
@@ -50,6 +53,7 @@ fun FailureLudoTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography  = LudoTypography,
+        shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp), large = RoundedCornerShape(28.dp)),
         content     = content
     )
 }

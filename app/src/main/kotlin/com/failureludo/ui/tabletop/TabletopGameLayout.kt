@@ -41,7 +41,7 @@ fun TabletopGameLayout(
         val player = players[color]
         val active = player?.isActive == true && player.id == state.currentPlayer.id
         CornerPlayer(player, color, active, palette[color] ?: Color.Gray, state.mode,
-            value = if (active) diceValue else player?.let { state.diceByPlayer[it.id] },
+            value = if (active) diceValue else null,
             rollId = if (active) rollId else 0L, rolling = active && rolling,
             reducedMotion = reducedMotion, enabled = active && canRoll, onRoll = onRoll,
             modifier = modifier)
@@ -119,17 +119,20 @@ private fun CornerPlayer(
     val occupied = player?.isActive == true
     val right = color == PlayerColor.BLUE || color == PlayerColor.YELLOW
     val shape = RoundedCornerShape(12.dp)
-    Row(modifier.fillMaxWidth().border(1.dp, if (active) tint else tint.copy(alpha = .24f), shape)
-        .background(if (active) TabletopStyle.Panel else Color.Transparent, shape)
-        .padding(horizontal = 4.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         @Composable fun Die() {
-            TabletopDice(value, rollId, rolling, reducedMotion, enabled, onRoll,
-                Modifier.size(48.dp).alpha(if (occupied) 1f else .22f)
-                    .semantics { contentDescription = "${player?.name ?: color.displayName} die" })
+            Box(Modifier.size(48.dp).background(TabletopStyle.Panel.copy(alpha = .65f), shape)
+                .border(1.dp, if (active) tint else TabletopStyle.Muted.copy(alpha = .25f), shape),
+                contentAlignment = Alignment.Center) {
+                if (active) TabletopDice(value, rollId, rolling, reducedMotion, enabled, onRoll,
+                    Modifier.size(48.dp).semantics { contentDescription = "${player?.name} die" })
+            }
         }
         if (!right) Die()
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).background(TabletopStyle.Panel.copy(alpha = .85f), shape)
+            .border(1.dp, if (active) tint else tint.copy(alpha = .24f), shape)
+            .padding(horizontal = 8.dp, vertical = 7.dp)) {
             Text(if (occupied) player!!.name else "Empty seat", color = if (occupied) TabletopStyle.Paper else TabletopStyle.Muted,
                 fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val detail = if (!occupied) "—" else buildString {
