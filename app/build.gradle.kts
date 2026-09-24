@@ -1,5 +1,8 @@
+import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
+import java.security.KeyStore
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -16,6 +19,42 @@ val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) load(FileInputStream(keystorePropertiesFile))
 }
 val hasReleaseSigning = keystorePropertiesFile.exists()
+
+
+// Public upload-certificate identity supplied by Google Play. Never accept a replacement
+// key silently; update this only after an intentional Play upload-key reset.
+val verifyPlayUploadKey = tasks.register("verifyPlayUploadKey") {
+    val credentialsFile = rootProject.layout.projectDirectory.file("keystore.properties")
+    // Always inspect the actual key, even when release compilation is up to date.
+    doLast {
+        check(credentialsFile.asFile.isFile) {
+            "Release signing is missing. See docs/release-signing.md."
+        }
+        val credentials = Properties().apply {
+            credentialsFile.asFile.inputStream().use { load(it) }
+        }
+        val configuredPath = credentials.getProperty("storeFile")
+            ?: error("Missing release storeFile. See docs/release-signing.md.")
+        val keyFile = File(configuredPath).let {
+            if (it.isAbsolute) it else File(credentialsFile.asFile.parentFile, configuredPath)
+        }
+        val certificate = try {
+            val store = KeyStore.getInstance(keyFile, credentials.getProperty("storePassword").toCharArray())
+            store.getCertificate(credentials.getProperty("keyAlias"))
+                ?: error("Missing signing certificate")
+        } catch (error: Exception) {
+            throw GradleException("Cannot read release signing certificate. Check keystore.properties; see docs/release-signing.md.")
+        }
+        val fingerprint = MessageDigest.getInstance("SHA-1").digest(certificate.encoded)
+            .joinToString(":") { "%02X".format(it.toInt() and 0xff) }
+        check(fingerprint == "F7:95:24:B5:1C:24:B8:93:BE:1D:34:B3:2A:D1:25:83:E9:46:06:0A") {
+            "Wrong Google Play upload key ($fingerprint). See docs/release-signing.md."
+        }
+        logger.lifecycle("Verified Google Play upload certificate: $fingerprint")
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" || it.name == "validateSigningRelease" }
+    .configureEach { dependsOn(verifyPlayUploadKey) }
 
 android {
     namespace = "com.failureludo"
