@@ -202,9 +202,7 @@ private fun DrawScope.drawTable(c: Float, palette: Map<PlayerColor, Color>) {
     PlayerColor.entries.forEach { color ->
         val tint = palette[color] ?: Color.Gray
         BoardCoordinates.HOME_COLUMNS.getValue(color).forEach { cell ->
-            drawTile(cell, c, Color(0xFFFFFDF7))
-            drawCircle(tint, c * .13f,
-                Offset((cell.second + .5f) * c, (cell.first + .5f) * c))
+            drawTile(cell, c, tint)
         }
     }
     val center = Offset(7.5f * c, 7.5f * c)
