@@ -35,3 +35,17 @@ On another computer, securely transfer the verified key, create a local
 locally. Keep an encrypted backup outside this laptop; the local recovery copy
 does not protect against loss of the laptop. Change the pinned fingerprint only
 after Google Play accepts an intentional upload-key reset.
+
+## Native debug symbols
+
+Release builds request `ndk.debugSymbolLevel = "FULL"` so available native symbols
+are automatically included in future bundles. The current AndroidX graphics path
+and DataStore shared-counter dependencies ship stripped libraries: all four ABIs
+have neither `.symtab` nor `.debug_info`. Enabling collection therefore produces no
+native symbol archive for these dependencies, and Play may still show its advisory
+warning. Do not upload a fabricated symbol archive or rebuild different binaries
+as substitute symbols. Matching unstripped artifacts must come from the dependency
+producer. The bundle already includes the R8 mapping for Kotlin/Java crash reports.
+
+Verified with a release build and ELF section inspection. Reference:
+https://developer.android.com/build/include-native-symbols
