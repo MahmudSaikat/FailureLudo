@@ -60,13 +60,13 @@ identifies its current Android 15 (API level 35) target as non-compliant. It giv
 **1 November 2026** as the deadline affecting the ability to publish app updates.
 This records the app-specific notice; its policy wording/date has not been independently verified.
 
-At the time of recording, `app/build.gradle.kts` has `compileSdk = 35`, `targetSdk = 35`,
+At the time of the notice, `app/build.gradle.kts` had `compileSdk = 35`, `targetSdk = 35`,
 and `versionCode = 9`. Running the prototype on an Android 16 emulator does not satisfy
 the target API requirement.
 
 Before the offline production release:
 
-- [ ] Upgrade `targetSdk` to at least 36, with a compatible `compileSdk` and build toolchain.
+- [x] Upgrade `targetSdk` to at least 36, with a compatible `compileSdk` and build toolchain.
 - [ ] Review target-API behavior changes and validate offline gameplay, lifecycle, layout,
   audio, save/resume, and supported Android versions after the upgrade.
 - [ ] Build a signed release with an appropriate higher version code; test through an
@@ -75,7 +75,23 @@ Before the offline production release:
   A repository change or testing-track upload alone does not complete the notice's remedy.
 - [ ] Confirm in Play Console that the production update succeeded and the issue is cleared.
 
-This entry is a reminder only; the SDK configuration and release status have not changed.
+Migration applied on 2026-09-24: `compileSdk = 36`, `targetSdk = 36`, and Android Gradle
+Plugin 8.10.1. Gradle 8.11.1, Java 17, and `minSdk = 26` remain unchanged. AGP 8.10
+[officially supports API 36 with this toolchain](https://developer.android.com/build/releases/agp-8-10-0-release-notes).
+The version remains 1.0.8 / code 9 until release preparation; select a version code higher
+than all uploaded Play artifacts before publication. Nothing has been published to Play.
+
+Compatibility review: the native offline activity already enables edge-to-edge display,
+and gameplay uses Compose `BackHandler`, with no legacy Back override or edge-to-edge opt-out.
+The smoke test now also exercises system Back confirmation, dialog dismissal, and activity
+recreation. See [Android 16 target behavior changes](https://developer.android.com/about/versions/16/behavior-changes-16).
+The API 36 debug APK built successfully at `app/build/outputs/apk/debug/app-debug.apk`;
+its packaged manifest confirms target API 36 and minimum API 26.
+The migration passed Android debug/release Kotlin compilation and all 139 unit tests
+(66 app, 73 engine). At the user's request, device testing is deferred to their manual test;
+the expanded smoke test has not been run with target 36. Release bundling and lint were
+stopped to conserve time/resources. Full-game, audio, physical-device, and older-Android
+validation remain release checks.
 
 ## Current handoff
 

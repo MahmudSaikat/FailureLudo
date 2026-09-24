@@ -19,12 +19,12 @@ val hasReleaseSigning = keystorePropertiesFile.exists()
 
 android {
     namespace = "com.failureludo"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.failureludo"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 9
         versionName = "1.0.8"
 

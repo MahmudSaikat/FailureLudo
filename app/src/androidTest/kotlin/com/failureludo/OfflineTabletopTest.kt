@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.espresso.Espresso.pressBack
 import org.junit.Rule
 import org.junit.Test
 
@@ -38,7 +39,18 @@ class OfflineTabletopTest {
         }
         compose.onNodeWithContentDescription("Ludo board.", substring = true).assertIsDisplayed()
         compose.onNodeWithText("CURRENT TURN").assertIsDisplayed()
+        // Exercise the system Back path with target 36, not just the toolbar exit button.
+        pressBack()
+        compose.onNodeWithText("Quit Game?").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Ludo board.", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Reduced motion").assertIsDisplayed()
+        pressBack()
+        compose.onNodeWithText("Game Feedback").assertDoesNotExist()
+        compose.onNodeWithText("Quit Game?").assertDoesNotExist()
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithContentDescription("Ludo board.", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("CURRENT TURN").assertIsDisplayed()
     }
 }

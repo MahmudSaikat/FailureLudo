@@ -28,7 +28,8 @@ layout, board, pawns, movement, dice animation, sound, and supporting screens.
 
 ## Android release requirement
 - The user supplied a Play Console notice requiring Android 16 / API 36 or higher, with a
-  1 November 2026 deadline. The app still targets API 35. Track the SDK migration, validation,
+  1 November 2026 deadline. The app now compiles and targets API 36 with AGP 8.10.1; minimum
+  supported Android remains API 26. Track migration validation
   and compliant production publication in [plan 009](plans/009-offline-android-redesign-goal.md#google-play-target-api-requirement--release-blocker).
 
 ## Architecture reminder
