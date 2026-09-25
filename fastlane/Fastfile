@@ -19,6 +19,30 @@ platform :android do
     UI.success("Play access verified. Track version codes: #{codes.join(', ')}")
   end
 
+  desc "List all Play tracks and visible artifact version codes without publishing"
+  lane :inventory_play do
+    require "supply"
+    require "supply/options"
+    Supply.config = FastlaneCore::Configuration.create(Supply::Options.available_options, {
+      package_name: "com.failureludo", json_key: play_key_path
+    })
+    client = Supply::Client.make_from_config
+    client.begin_edit(package_name: "com.failureludo")
+    begin
+      codes = client.apks_version_codes + client.aab_version_codes
+      client.tracks.each do |track|
+        Array(track.releases).each do |release|
+          versions = Array(release.version_codes).map(&:to_i)
+          codes.concat(versions)
+          UI.message("#{track.track}: #{release.status} #{release.name} (#{versions.join(', ')})")
+        end
+      end
+      UI.success("Highest visible Play version code: #{codes.map(&:to_i).max || 0}")
+    ensure
+      client.abort_current_edit
+    end
+  end
+
   desc "Build a signed release AAB locally"
   lane :build_release do
     root = File.expand_path("..", __dir__)
@@ -26,6 +50,26 @@ platform :android do
       UI.user_error!("Configure keystore.properties before building a signed release.")
     end
     gradle(task: ":app:bundleRelease", project_dir: root)
+  end
+
+  desc "Build and publish to the existing alpha closed-testing track"
+  lane :closed do
+    key = play_key_path
+    build_release
+    aab = lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH]
+    UI.user_error!("The release build did not produce an AAB.") unless aab && File.file?(aab)
+    upload_to_play_store(
+      package_name: "com.failureludo",
+      json_key: key,
+      aab: aab,
+      track: "alpha",
+      release_status: "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true
+    )
   end
 
   desc "Build and upload to internal testing; validate_only:true validates without committing"

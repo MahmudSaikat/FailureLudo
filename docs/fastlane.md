@@ -59,6 +59,12 @@ long-lived downloaded key.
 ./bin/fastlane android verify_play
 ./bin/fastlane android verify_play track:production
 
+# List all tracks and visible APK/AAB version codes without publishing
+./bin/fastlane android inventory_play
+
+# Build and publish to the existing closed-testing track (alpha)
+./bin/fastlane android closed
+
 # Local signed bundle; uses the existing ignored keystore.properties
 ./bin/fastlane android build_release
 
