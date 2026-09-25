@@ -53,7 +53,7 @@ fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Uni
                     Canvas(Modifier.size(18.dp)) { drawIdentity(center,size.width*.32f,tint,index) }
                 }
             }
-            Text("Pass & play  ·  Play against bots",color=TabletopStyle.Muted,fontSize=12.sp)
+            Text("Play together on one phone",color=TabletopStyle.Muted,fontSize=12.sp)
         }
     }
 }

@@ -10,8 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,22 +18,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.failureludo.engine.GameMode
 import com.failureludo.engine.PlayerColor
 import com.failureludo.engine.PlayerType
 import com.failureludo.ui.theme.*
-import com.failureludo.viewmodel.BotBehaviorMode
 import com.failureludo.viewmodel.defaultPlayerColors
 import com.failureludo.viewmodel.GameViewModel
-import com.failureludo.viewmodel.SetupState
+import com.failureludo.viewmodel.quickGameSetup
 
 private const val MAX_PLAYER_NAME_LENGTH = 18
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun GameSetupScreen(
     viewModel: GameViewModel,
@@ -43,170 +38,103 @@ fun GameSetupScreen(
     onBack: () -> Unit
 ) {
     val setup by viewModel.setupState.collectAsState()
-    var setupStep by rememberSaveable { mutableIntStateOf(0) }
-
-    val colorsToShow = if (setup.mode == GameMode.TEAM) {
-        PlayerColor.entries
-    } else {
-        setup.activeColors
-    }
-
-    val canProceedFromNames = colorsToShow.all { color ->
-        !(setup.playerNames[color].isNullOrBlank())
-    }
+    var customGame by rememberSaveable { mutableStateOf(false) }
+    var playerCount by rememberSaveable { mutableIntStateOf(2) }
+    var showColors by rememberSaveable { mutableStateOf(false) }
+    val colorsToShow = if (setup.mode == GameMode.TEAM) PlayerColor.entries else setup.activeColors
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Game Setup") },
+                title = { Text("New game") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Primary, titleContentColor = OnPrimary, navigationIconContentColor = OnPrimary)
+                }
             )
         },
-        containerColor = Background
+        containerColor = Background,
+        bottomBar = {
+            Surface {
+                Button(
+                    onClick = {
+                        viewModel.updateSetup(if (customGame) setup else quickGameSetup(playerCount))
+                        viewModel.startGame()
+                        onStartGame()
+                    },
+                    enabled = !customGame || colorsToShow.size >= 2,
+                    modifier = Modifier.navigationBarsPadding().imePadding()
+                        .padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().heightIn(min = 52.dp)
+                ) { Text("Start game") }
+            }
+        }
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .gardenBackground()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).gardenBackground()
+                .verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            GameModeSection(
-                selected = setup.mode,
-                onSelect = { selectedMode ->
-                    val nextSetup = if (selectedMode == GameMode.TEAM) {
-                        setup.copy(mode = selectedMode, activeColors = PlayerColor.entries)
-                    } else {
-                        setup.copy(mode = selectedMode)
-                    }
-                    viewModel.updateSetup(nextSetup)
-                }
-            )
-
-            BotBehaviorSection(
-                selected = setup.botBehaviorMode,
-                onSelect = { selectedMode ->
-                    viewModel.updateSetup(setup.copy(botBehaviorMode = selectedMode))
-                }
-            )
-
-            if (setup.mode == GameMode.FREE_FOR_ALL) {
-                PlayerCountSection(
-                    activeColors = setup.activeColors,
-                    onColorsChange = { newColors ->
-                        viewModel.updateSetup(setup.copy(activeColors = newColors))
-                    }
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilterChip(selected = !customGame, onClick = { customGame = false },
+                    label = { Text("Quick game") })
+                FilterChip(selected = customGame, onClick = { customGame = true },
+                    label = { Text("Custom game") })
             }
-
-            HorizontalDivider(color = OnSurface.copy(alpha = 0.14f))
-
-            Text(
-                text = if (setupStep == 0) {
-                    "Step 1 of 2: Set player names"
-                } else {
-                    "Step 2 of 2: Choose player colors"
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Primary
-            )
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (setupStep == 0) {
-                    colorsToShow.forEach { color ->
-                        PlayerRow(
-                            color = color,
-                            name = setup.playerNames[color] ?: "Player-${color.ordinal + 1}",
-                            type = setup.playerTypes[color] ?: PlayerType.HUMAN,
-                            onTypeToggle = {
-                                val newTypes = setup.playerTypes.toMutableMap()
-                                newTypes[color] = if (newTypes[color] == PlayerType.HUMAN) PlayerType.BOT else PlayerType.HUMAN
-                                viewModel.updateSetup(setup.copy(playerTypes = newTypes))
-                            },
-                            onNameChange = { newName ->
-                                val newNames = setup.playerNames.toMutableMap()
-                                newNames[color] = newName.take(MAX_PLAYER_NAME_LENGTH)
-                                viewModel.updateSetup(setup.copy(playerNames = newNames))
-                            }
-                        )
+            if (!customGame) {
+                Text("Play together on this phone", style = MaterialTheme.typography.titleLarge)
+                Text("How many players?")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    (2..4).forEach { count ->
+                        FilterChip(selected = playerCount == count, onClick = { playerCount = count },
+                            label = { Text("$count players") })
+                    }
+                }
+                Text(if (playerCount == 2) "Two people, opposite corners." else "$playerCount people, each playing for themselves.")
+                Text("Ready to play with the usual colors. For names, teams or computer opponents, choose Custom game.",
+                    style = MaterialTheme.typography.bodyMedium)
+            } else {
+                Text("Make it your game", style = MaterialTheme.typography.titleLarge)
+                GameModeSection(selected = setup.mode, onSelect = { mode ->
+                    viewModel.updateSetup(setup.copy(mode = mode,
+                        activeColors = if (mode == GameMode.TEAM) PlayerColor.entries else setup.activeColors))
+                })
+                if (setup.mode == GameMode.FREE_FOR_ALL) {
+                    PlayerCountSection(setup.activeColors) {
+                        viewModel.updateSetup(setup.copy(activeColors = it))
                     }
                 } else {
-                    PlayerColorSection(
-                        seats = colorsToShow,
-                        playerNames = setup.playerNames,
-                        playerColors = setup.playerColors,
-                        onColorChange = { playerColor, selectedColor ->
-                            val updated = setup.playerColors.toMutableMap()
-                            val swappedSeat = updated.entries.firstOrNull {
-                                it.key != playerColor && it.value == selectedColor
-                            }?.key
-
-                            if (swappedSeat != null) {
-                                updated[swappedSeat] = updated[playerColor] ?: selectedColor
-                            }
-
-                            updated[playerColor] = selectedColor
-                            viewModel.updateSetup(setup.copy(playerColors = updated))
+                    Text("Opposite corners are teammates: top left + bottom right, top right + bottom left.")
+                }
+                Text("Players", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                colorsToShow.forEach { color ->
+                    PlayerRow(
+                        color = color,
+                        name = setup.playerNames[color].orEmpty(),
+                        type = setup.playerTypes[color] ?: PlayerType.HUMAN,
+                        onTypeChange = { type ->
+                            viewModel.updateSetup(setup.copy(playerTypes = setup.playerTypes + (color to type)))
                         },
-                        onResetDefaults = {
-                            viewModel.updateSetup(setup.copy(playerColors = defaultPlayerColors()))
+                        onNameChange = { name ->
+                            viewModel.updateSetup(setup.copy(playerNames = setup.playerNames + (color to name)))
                         }
                     )
                 }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        if (setupStep == 0) onBack() else setupStep = 0
+                TextButton(onClick = { showColors = !showColors }) {
+                    Text(if (showColors) "Hide player colors" else "Change player colors")
+                }
+                if (showColors) PlayerColorSection(
+                    seats = colorsToShow, playerNames = setup.playerNames, playerColors = setup.playerColors,
+                    onColorChange = { seat, selected ->
+                        val updated = setup.playerColors.toMutableMap()
+                        updated.entries.firstOrNull { it.key != seat && it.value == selected }?.key?.let {
+                            updated[it] = updated[seat] ?: playerColor(seat)
+                        }
+                        updated[seat] = selected
+                        viewModel.updateSetup(setup.copy(playerColors = updated))
                     },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text(if (setupStep == 0) "Back" else "Previous")
-                }
-
-                if (setupStep == 0) {
-                    Button(
-                        onClick = { setupStep = 1 },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        enabled = canProceedFromNames && setup.activeColors.size >= 2
-                    ) {
-                        Text("Next")
-                    }
-                } else {
-                    Button(
-                        onClick = {
-                            viewModel.startGame()
-                            onStartGame()
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Primary),
-                        enabled = setup.activeColors.size >= 2
-                    ) {
-                        Text("Start Game", style = MaterialTheme.typography.titleMedium, color = OnPrimary)
-                    }
-                }
+                    onResetDefaults = { viewModel.updateSetup(setup.copy(playerColors = defaultPlayerColors())) }
+                )
             }
         }
     }
@@ -218,10 +146,10 @@ fun GameSetupScreen(
 private fun GameModeSection(selected: GameMode, onSelect: (GameMode) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Primary)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column {
             GameMode.entries.forEach { mode ->
                 val label = when (mode) {
-                    GameMode.FREE_FOR_ALL -> "Free for All"
+                    GameMode.FREE_FOR_ALL -> "Everyone for themselves"
                     GameMode.TEAM        -> "Team (2 vs 2)"
                 }
                 FilterChip(
@@ -239,95 +167,41 @@ private fun GameModeSection(selected: GameMode, onSelect: (GameMode) -> Unit) {
 }
 
 @Composable
-private fun BotBehaviorSection(
-    selected: BotBehaviorMode,
-    onSelect: (BotBehaviorMode) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            "Bot Behavior",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = Primary
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilterChip(
-                selected = selected == BotBehaviorMode.AI_UNDER_DEVELOPMENT,
-                onClick = { onSelect(BotBehaviorMode.AI_UNDER_DEVELOPMENT) },
-                label = { Text("AI (under development)") },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Primary,
-                    selectedLabelColor = OnPrimary
-                )
-            )
-            FilterChip(
-                selected = selected == BotBehaviorMode.HEURISTIC,
-                onClick = { onSelect(BotBehaviorMode.HEURISTIC) },
-                label = { Text("Heuristic") },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Primary,
-                    selectedLabelColor = OnPrimary
-                )
-            )
-        }
-        Text(
-            "Applies to all players set as bot.",
-            style = MaterialTheme.typography.bodySmall,
-            color = OnSurface.copy(alpha = 0.65f)
-        )
-    }
-}
-
-@Composable
 private fun PlayerCountSection(
     activeColors: List<PlayerColor>,
     onColorsChange: (List<PlayerColor>) -> Unit
 ) {
-    val allColors = PlayerColor.entries
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Active Players (${activeColors.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Primary)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            allColors.forEach { color ->
-                val isActive = color in activeColors
-                val bgColor  = playerColor(color).copy(alpha = if (isActive) 1f else 0.25f)
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(bgColor)
-                        .border(
-                            width = if (isActive) 3.dp else 1.dp,
-                            color = if (isActive) Color.Black.copy(0.4f) else Color.Transparent,
-                            shape = CircleShape
-                        )
-                        .clickable {
-                            val newList = activeColors.toMutableList()
-                            if (isActive) {
-                                if (newList.size > 2) newList.remove(color)
-                            } else {
-                                newList.add(color)
-                            }
-                            onColorsChange(newList)
+        Text("Choose seats (${activeColors.size} players)", style = MaterialTheme.typography.titleMedium)
+        listOf(listOf(PlayerColor.RED, PlayerColor.BLUE), listOf(PlayerColor.GREEN, PlayerColor.YELLOW)).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { seat ->
+                    FilterChip(
+                        modifier = Modifier.weight(1f),
+                        selected = seat in activeColors,
+                        onClick = {
+                            val next = if (seat in activeColors) {
+                                if (activeColors.size > 2) activeColors - seat else activeColors
+                            } else activeColors + seat
+                            onColorsChange(next.sortedBy { it.ordinal })
                         },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        (color.ordinal + 1).toString(),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
+                        label = { Text(seatLabel(seat)) }
                     )
                 }
             }
         }
-        Text(
-            "Tap to toggle. Minimum 2 players.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
+        Text("Choose at least 2 seats. Side-by-side play is available here.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
+private fun seatLabel(seat: PlayerColor): String = when (seat) {
+    PlayerColor.RED -> "Top left"
+    PlayerColor.BLUE -> "Top right"
+    PlayerColor.YELLOW -> "Bottom right"
+    PlayerColor.GREEN -> "Bottom left"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerColorSection(
     seats: List<PlayerColor>,
@@ -393,7 +267,7 @@ private fun PlayerColorSection(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     selectableColors.forEach { option ->
                         val isSelected = option == selected
                         Box(
@@ -426,7 +300,7 @@ private fun PlayerRow(
     color: PlayerColor,
     name: String,
     type: PlayerType,
-    onTypeToggle: () -> Unit,
+    onTypeChange: (PlayerType) -> Unit,
     onNameChange: (String) -> Unit
 ) {
     Card(
@@ -437,55 +311,20 @@ private fun PlayerRow(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Colour circle
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(playerColor(color)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    (color.ordinal + 1).toString(),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(seatLabel(color), style = MaterialTheme.typography.titleSmall)
             OutlinedTextField(
                 value = name,
                 onValueChange = { onNameChange(it.take(MAX_PLAYER_NAME_LENGTH)) },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("Name (optional)") },
                 placeholder = { Text("Player-${color.ordinal + 1}") }
             )
-
-            // Human / Bot toggle
-            val effectiveName = name.ifBlank { "Player-${color.ordinal + 1}" }
-            IconButton(
-                onClick = onTypeToggle,
-                modifier = Modifier.semantics {
-                    contentDescription = if (type == PlayerType.HUMAN) {
-                        "Switch $effectiveName to bot"
-                    } else {
-                        "Switch $effectiveName to human"
-                    }
-                }
-            ) {
-                Icon(
-                    imageVector = if (type == PlayerType.HUMAN) Icons.Default.Person else Icons.Default.SmartToy,
-                    contentDescription = type.name,
-                    tint = if (type == PlayerType.BOT) Primary else MaterialTheme.colorScheme.onSurface
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilterChip(selected = type == PlayerType.HUMAN,
+                    onClick = { onTypeChange(PlayerType.HUMAN) }, label = { Text("Person") })
+                FilterChip(selected = type == PlayerType.BOT,
+                    onClick = { onTypeChange(PlayerType.BOT) }, label = { Text("Computer") })
             }
         }
     }

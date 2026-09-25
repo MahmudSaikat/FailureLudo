@@ -21,13 +21,11 @@ class OfflineTabletopTest {
             compose.onAllNodesWithText("New game").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("New game").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("Free for All").performClick()
-        // Existing emulator preferences may contain bot seats from earlier play.
-        while (compose.onAllNodes(hasContentDescription("to human", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
-            compose.onAllNodes(hasContentDescription("to human", substring = true))[0].performClick()
-        }
-        compose.onNodeWithText("Next").performClick()
-        compose.onNodeWithText("Start Game").performClick()
+        compose.onNodeWithText("Quick game").assertIsSelected()
+        compose.onNodeWithText("2 players").assertIsSelected()
+        compose.onNodeWithText("Two people, opposite corners.").assertIsDisplayed()
+        compose.onNodeWithText("Heuristic").assertDoesNotExist()
+        compose.onNodeWithText("Start game").performClick()
         compose.onNodeWithContentDescription("Roll dice").assertIsDisplayed().performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodes(hasContentDescription("Dice:", substring = true)).fetchSemanticsNodes().isNotEmpty()

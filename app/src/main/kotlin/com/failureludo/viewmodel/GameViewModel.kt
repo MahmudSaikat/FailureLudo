@@ -192,7 +192,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         clearReplayModeInternal()
         clearHistory()
         _pendingHomeEntryChoicePiece.value = null
-        val setup = _setupState.value
+        val setup = _setupState.value.forNewGame()
+        _setupState.value = setup
         val activeColors = if (setup.mode == com.failureludo.engine.GameMode.TEAM) {
             PlayerColor.entries
         } else {

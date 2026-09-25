@@ -20,13 +20,13 @@ enum class BotBehaviorMode {
  */
 data class SetupState(
     val activeColors: List<PlayerColor> = listOf(
-        PlayerColor.RED, PlayerColor.BLUE, PlayerColor.YELLOW, PlayerColor.GREEN
+        PlayerColor.RED, PlayerColor.YELLOW
     ),
     val playerTypes: Map<PlayerColor, PlayerType> = PlayerColor.entries.associateWith { PlayerType.HUMAN },
     val playerNames: Map<PlayerColor, String> = defaultPlayerNames(),
     val playerColors: Map<PlayerColor, Color> = defaultPlayerColors(),
     val mode: GameMode = GameMode.FREE_FOR_ALL,
-    val botBehaviorMode: BotBehaviorMode = BotBehaviorMode.AI_UNDER_DEVELOPMENT
+    val botBehaviorMode: BotBehaviorMode = BotBehaviorMode.HEURISTIC
 )
 
 fun defaultPlayerNames(): Map<PlayerColor, String> = mapOf(
@@ -41,4 +41,24 @@ fun defaultPlayerColors(): Map<PlayerColor, Color> = mapOf(
     PlayerColor.BLUE to LudoBlue,
     PlayerColor.YELLOW to LudoYellow,
     PlayerColor.GREEN to LudoGreen
+)
+
+/** A fresh familiar game, independent of saved custom preferences. */
+fun quickGameSetup(playerCount: Int = 2): SetupState {
+    require(playerCount in 2..4)
+    val seats = when (playerCount) {
+        2 -> listOf(PlayerColor.RED, PlayerColor.YELLOW)
+        3 -> listOf(PlayerColor.RED, PlayerColor.BLUE, PlayerColor.YELLOW)
+        else -> PlayerColor.entries.toList()
+    }
+    return SetupState(activeColors = seats, playerNames = defaultPlayerNames() +
+        seats.mapIndexed { index, seat -> seat to "Player-${index + 1}" }.toMap())
+}
+
+/** Keep the paused experimental policy out of new games, including Play again. */
+fun SetupState.forNewGame(): SetupState = copy(
+    botBehaviorMode = BotBehaviorMode.HEURISTIC,
+    playerNames = PlayerColor.entries.associateWith { seat ->
+        playerNames[seat]?.trim()?.takeIf { it.isNotEmpty() } ?: "Player-${seat.ordinal + 1}"
+    }
 )

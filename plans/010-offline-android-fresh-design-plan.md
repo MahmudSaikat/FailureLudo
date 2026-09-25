@@ -416,3 +416,23 @@ screenshot iteration is required for this pass.
   replay, comparing complete final states; a separate test rejects a mislabeled forfeit.
 - Validation: Android debug APK and unit tests pass. Visual/device/audio testing is explicitly
   left to the user; no emulator or screenshot generation was performed for this pass.
+
+
+## Tester feedback — simpler setup (September 25)
+
+New game now opens Quick game: two local people in diagonal red/yellow seats by default,
+with optional three/four-player presets and a single Start game action. Quick presets use
+fresh names, colors and person-only seats regardless of saved custom settings.
+Custom game contains the existing seat combinations, teams, names, explicit Person/Computer
+choices and an optional color section. Seats are arranged like board corners; adjacent-seat
+play remains available. Names and colors no longer require a two-step wizard.
+
+The experimental AI selection and technical bot-policy labels are hidden while AI development
+is paused. Regular computer opponents remain available in Custom game. New games and Play
+again use the regular heuristic policy, including when previous preferences selected experimental
+AI; existing saves and bot implementation remain recoverable. Blank custom names get defaults.
+This supersedes earlier setup recommendations that exposed bot-policy selection.
+
+Validation: all 75 app unit tests pass, including quick-setup/legacy-preference coverage.
+The debug APK builds and updated offline navigation instrumentation tests compile; device tests
+were not run. Device visual review remains necessary for compact screens, landscape and large text.
