@@ -436,3 +436,20 @@ This supersedes earlier setup recommendations that exposed bot-policy selection.
 Validation: all 75 app unit tests pass, including quick-setup/legacy-preference coverage.
 The debug APK builds and updated offline navigation instrumentation tests compile; device tests
 were not run. Device visual review remains necessary for compact screens, landscape and large text.
+
+
+## Tester feedback — less reading before play (September 25)
+
+- Keep English for now; Bangla support is deferred. Use “Single” and “Team”.
+- New game opens directly to player count and a four-corner preview. More options
+  opens custom controls on the same page, carrying over the chosen player count;
+  Quick setup returns to fresh person-only presets. Team setup labels matching pairs.
+  Short labels, player symbols and wrapping controls replace longer explanations.
+- Custom colors update player cards, offer 48 dp selectable targets with spoken color
+  names and checkmarks, and include the exact default colors. Single seat choices
+  survive switching to Team and back.
+- Home has a shorter Resume action with player names, and empty history is supporting
+  text. Buttons can grow with text size.
+- Validation: app unit tests, debug APK and instrumentation compilation are checked
+  for this change. Added device regression coverage for mode switching and default
+  color selection; device execution and visual review remain pending.

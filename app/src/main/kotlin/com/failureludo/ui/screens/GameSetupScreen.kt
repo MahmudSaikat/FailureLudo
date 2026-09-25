@@ -1,13 +1,17 @@
 package com.failureludo.ui.screens
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -18,6 +22,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.failureludo.ui.tabletop.drawIdentity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.failureludo.engine.GameMode
@@ -75,41 +83,43 @@ fun GameSetupScreen(
                 .verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilterChip(selected = !customGame, onClick = { customGame = false },
-                    label = { Text("Quick game") })
-                FilterChip(selected = customGame, onClick = { customGame = true },
-                    label = { Text("Custom game") })
-            }
             if (!customGame) {
-                Text("Play together on this phone", style = MaterialTheme.typography.titleLarge)
-                Text("How many players?")
+                Text("Players", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     (2..4).forEach { count ->
                         FilterChip(selected = playerCount == count, onClick = { playerCount = count },
                             label = { Text("$count players") })
                     }
                 }
-                Text(if (playerCount == 2) "Two people, opposite corners." else "$playerCount people, each playing for themselves.")
-                Text("Ready to play with the usual colors. For names, teams or computer opponents, choose Custom game.",
-                    style = MaterialTheme.typography.bodyMedium)
+                SeatPreview(quickGameSetup(playerCount).activeColors, defaultPlayerColors(), false)
+                OutlinedButton(onClick = {
+                    viewModel.updateSetup(setup.copy(mode = GameMode.FREE_FOR_ALL,
+                        activeColors = quickGameSetup(playerCount).activeColors))
+                    customGame = true
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("More options")
+                }
             } else {
-                Text("Make it your game", style = MaterialTheme.typography.titleLarge)
+                TextButton(onClick = { customGame = false }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Quick setup")
+                }
                 GameModeSection(selected = setup.mode, onSelect = { mode ->
-                    viewModel.updateSetup(setup.copy(mode = mode,
-                        activeColors = if (mode == GameMode.TEAM) PlayerColor.entries else setup.activeColors))
+                    viewModel.updateSetup(setup.copy(mode = mode))
                 })
                 if (setup.mode == GameMode.FREE_FOR_ALL) {
-                    PlayerCountSection(setup.activeColors) {
+                    PlayerCountSection(setup.activeColors, setup.playerColors) {
                         viewModel.updateSetup(setup.copy(activeColors = it))
                     }
                 } else {
-                    Text("Opposite corners are teammates: top left + bottom right, top right + bottom left.")
+                    SeatPreview(colorsToShow, setup.playerColors, true)
                 }
                 Text("Players", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 colorsToShow.forEach { color ->
                     PlayerRow(
                         color = color,
+                        tint = playerColor(color, setup.playerColors),
                         name = setup.playerNames[color].orEmpty(),
                         type = setup.playerTypes[color] ?: PlayerType.HUMAN,
                         onTypeChange = { type ->
@@ -121,7 +131,7 @@ fun GameSetupScreen(
                     )
                 }
                 TextButton(onClick = { showColors = !showColors }) {
-                    Text(if (showColors) "Hide player colors" else "Change player colors")
+                    Text(if (showColors) "Hide colors" else "Colors")
                 }
                 if (showColors) PlayerColorSection(
                     seats = colorsToShow, playerNames = setup.playerNames, playerColors = setup.playerColors,
@@ -140,17 +150,50 @@ fun GameSetupScreen(
     }
 }
 
+@Composable
+private fun PlayerMarker(seat: PlayerColor, tint: Color) {
+    Canvas(Modifier.size(24.dp)) { drawIdentity(center, size.minDimension * .38f, tint, seat.ordinal) }
+}
+
+@Composable
+private fun SeatPreview(seats: List<PlayerColor>, palette: Map<PlayerColor, Color>, teams: Boolean) {
+    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(listOf(PlayerColor.RED, PlayerColor.BLUE), listOf(PlayerColor.GREEN, PlayerColor.YELLOW)).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    row.forEach { seat ->
+                        val active = seat in seats
+                        val tint = playerColor(seat, palette)
+                        Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                            .background(if (active) tint.copy(alpha = .12f) else Background)
+                            .padding(12.dp)
+                            .semantics { contentDescription = "${seatLabel(seat)}, ${if (active) "playing" else "empty"}" },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            PlayerMarker(seat, if (active) tint else OnSurface.copy(alpha = .2f))
+                            Text(if (!active) "—" else if (teams) {
+                                if (seat == PlayerColor.RED || seat == PlayerColor.YELLOW) "Team 1" else "Team 2"
+                            } else "${seats.indexOf(seat) + 1}", style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GameModeSection(selected: GameMode, onSelect: (GameMode) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Mode", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Primary)
-        Column {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             GameMode.entries.forEach { mode ->
                 val label = when (mode) {
-                    GameMode.FREE_FOR_ALL -> "Everyone for themselves"
-                    GameMode.TEAM        -> "Team (2 vs 2)"
+                    GameMode.FREE_FOR_ALL -> "Single"
+                    GameMode.TEAM        -> "Team"
                 }
                 FilterChip(
                     selected = selected == mode,
@@ -169,15 +212,17 @@ private fun GameModeSection(selected: GameMode, onSelect: (GameMode) -> Unit) {
 @Composable
 private fun PlayerCountSection(
     activeColors: List<PlayerColor>,
+    palette: Map<PlayerColor, Color>,
     onColorsChange: (List<PlayerColor>) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Choose seats (${activeColors.size} players)", style = MaterialTheme.typography.titleMedium)
+        Text("Seats (${activeColors.size})", style = MaterialTheme.typography.titleMedium)
         listOf(listOf(PlayerColor.RED, PlayerColor.BLUE), listOf(PlayerColor.GREEN, PlayerColor.YELLOW)).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { seat ->
                     FilterChip(
                         modifier = Modifier.weight(1f),
+                        leadingIcon = { PlayerMarker(seat, playerColor(seat, palette)) },
                         selected = seat in activeColors,
                         onClick = {
                             val next = if (seat in activeColors) {
@@ -190,7 +235,7 @@ private fun PlayerCountSection(
                 }
             }
         }
-        Text("Choose at least 2 seats. Side-by-side play is available here.", style = MaterialTheme.typography.bodySmall)
+        Text("Pick 2–4 seats", style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -212,18 +257,20 @@ private fun PlayerColorSection(
 ) {
     val selectableColors = remember {
         listOf(
-            Color.hsv(0f, 0.78f, 0.86f),
-            Color.hsv(30f, 0.80f, 0.90f),
-            Color.hsv(50f, 0.75f, 0.92f),
-            Color.hsv(85f, 0.70f, 0.84f),
-            Color.hsv(120f, 0.70f, 0.82f),
-            Color.hsv(165f, 0.75f, 0.78f),
-            Color.hsv(200f, 0.75f, 0.90f),
-            Color.hsv(235f, 0.73f, 0.88f),
-            Color.hsv(275f, 0.70f, 0.84f),
-            Color.hsv(310f, 0.70f, 0.84f),
-            Color.hsv(340f, 0.72f, 0.88f),
-            Color.hsv(15f, 0.55f, 0.72f)
+            "Red" to LudoRed, "Blue" to LudoBlue,
+            "Yellow" to LudoYellow, "Green" to LudoGreen,
+            "Scarlet" to Color.hsv(0f, .78f, .86f),
+            "Orange" to Color.hsv(30f, .80f, .90f),
+            "Gold" to Color.hsv(50f, .75f, .92f),
+            "Lime" to Color.hsv(85f, .70f, .84f),
+            "Bright green" to Color.hsv(120f, .70f, .82f),
+            "Teal" to Color.hsv(165f, .75f, .78f),
+            "Sky blue" to Color.hsv(200f, .75f, .90f),
+            "Indigo" to Color.hsv(235f, .73f, .88f),
+            "Purple" to Color.hsv(275f, .70f, .84f),
+            "Pink" to Color.hsv(310f, .70f, .84f),
+            "Rose" to Color.hsv(340f, .72f, .88f),
+            "Brown" to Color.hsv(15f, .55f, .72f)
         )
     }
 
@@ -234,13 +281,13 @@ private fun PlayerColorSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Player Colors",
+                "Colors",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Primary
             )
             TextButton(onClick = onResetDefaults) {
-                Text("Reset Defaults")
+                Text("Reset")
             }
         }
 
@@ -268,36 +315,41 @@ private fun PlayerColorSection(
                 }
 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    selectableColors.forEach { option ->
+                    selectableColors.forEach { (label, option) ->
                         val isSelected = option == selected
                         Box(
-                            modifier = Modifier
-                                .size(28.dp)
-                                .clip(CircleShape)
-                                .background(option)
-                                .border(
-                                    width = if (isSelected) 3.dp else 1.dp,
-                                    color = if (isSelected) Primary else Color.Black.copy(alpha = 0.2f),
-                                    shape = CircleShape
-                                )
-                                .clickable { onColorChange(seat, option) }
-                        )
+                            modifier = Modifier.size(48.dp)
+                                .semantics { contentDescription = "$displayName, $label" }
+                                .selectable(selected = isSelected, role = Role.RadioButton,
+                                    onClick = { onColorChange(seat, option) }),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(Modifier.size(32.dp).clip(CircleShape).background(option)
+                                .border(1.dp, OnSurface.copy(alpha = .3f), CircleShape),
+                                contentAlignment = Alignment.Center) {
+                                if (isSelected) Icon(Icons.Default.Check, contentDescription = null,
+                                    tint = OnSurface, modifier = Modifier.size(24.dp)
+                                        .background(Color.White, CircleShape).padding(2.dp))
+                            }
+                        }
                     }
                 }
             }
         }
 
         Text(
-            "Selecting an already-used color swaps it between players.",
+            "Picking a used color swaps it.",
             style = MaterialTheme.typography.bodySmall,
             color = OnSurface.copy(alpha = 0.65f)
         )
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayerRow(
     color: PlayerColor,
+    tint: Color,
     name: String,
     type: PlayerType,
     onTypeChange: (PlayerType) -> Unit,
@@ -307,23 +359,28 @@ private fun PlayerRow(
         modifier = Modifier.fillMaxWidth(),
         shape    = RoundedCornerShape(14.dp),
         colors   = CardDefaults.cardColors(
-            containerColor = playerColor(color).copy(alpha = 0.12f)
+            containerColor = tint.copy(alpha = 0.12f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(seatLabel(color), style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PlayerMarker(color, tint)
+                Text(seatLabel(color), style = MaterialTheme.typography.titleSmall)
+            }
             OutlinedTextField(
                 value = name,
                 onValueChange = { onNameChange(it.take(MAX_PLAYER_NAME_LENGTH)) },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("Name (optional)") },
+                label = { Text("Name") },
                 placeholder = { Text("Player-${color.ordinal + 1}") }
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FilterChip(selected = type == PlayerType.HUMAN,
+                    leadingIcon = { Icon(Icons.Default.Person, null, Modifier.size(20.dp)) },
                     onClick = { onTypeChange(PlayerType.HUMAN) }, label = { Text("Person") })
                 FilterChip(selected = type == PlayerType.BOT,
+                    leadingIcon = { Icon(Icons.Default.SmartToy, null, Modifier.size(20.dp)) },
                     onClick = { onTypeChange(PlayerType.BOT) }, label = { Text("Computer") })
             }
         }

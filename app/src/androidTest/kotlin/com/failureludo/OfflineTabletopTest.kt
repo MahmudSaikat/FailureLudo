@@ -12,6 +12,32 @@ import org.junit.Test
 class OfflineTabletopTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    @Test fun customSetupKeepsSingleSeatsAndExposesSelectedColors() {
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithText("New game").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("New game").performScrollTo().performClick()
+        compose.onNodeWithText("More options").performScrollTo().performClick()
+        compose.onNodeWithText("Single").performClick()
+        val seats = listOf("Top left", "Top right", "Bottom left", "Bottom right")
+        val selectedBefore = seats.map { label ->
+            compose.onNode(hasText(label) and isSelectable()).fetchSemanticsNode()
+                .config[androidx.compose.ui.semantics.SemanticsProperties.Selected]
+        }
+        compose.onNodeWithText("Team").performClick()
+        compose.onAllNodesWithText("Team 1").assertCountEquals(2)
+        compose.onAllNodesWithText("Team 2").assertCountEquals(2)
+        compose.onNodeWithText("Single").performClick()
+        seats.zip(selectedBefore).forEach { (label, selected) ->
+            val node = compose.onNode(hasText(label) and isSelectable())
+            if (selected) node.assertIsSelected() else node.assertIsNotSelected()
+        }
+        compose.onNodeWithText("Colors").performScrollTo().performClick()
+        compose.onNodeWithText("Reset").performScrollTo().performClick()
+        compose.onAllNodes(hasContentDescription(", Red", substring = true) and isSelected())
+            .assertCountEquals(if (selectedBefore[0]) 1 else 0)
+    }
+
     @Test fun localGameOpensAndRollSettlesWithoutAuthentication() {
         compose.runOnIdle { compose.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
         compose.waitUntil(5_000) {
@@ -21,9 +47,9 @@ class OfflineTabletopTest {
             compose.onAllNodesWithText("New game").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithText("New game").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("Quick game").assertIsSelected()
         compose.onNodeWithText("2 players").assertIsSelected()
-        compose.onNodeWithText("Two people, opposite corners.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Top left, playing").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Bottom right, playing").assertIsDisplayed()
         compose.onNodeWithText("Heuristic").assertDoesNotExist()
         compose.onNodeWithText("Start game").performClick()
         compose.onNodeWithContentDescription("Roll dice").assertIsDisplayed().performClick()

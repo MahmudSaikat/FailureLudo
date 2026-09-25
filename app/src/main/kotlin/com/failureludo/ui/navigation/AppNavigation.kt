@@ -20,6 +20,7 @@ fun AppNavigation(navController: NavHostController) {
     val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
     val historyRecords by gameViewModel.historyRecords.collectAsState()
 
+    val gameState by gameViewModel.gameState.collectAsState()
     val hasActiveGame = gameViewModel.hasActiveGame
     val hasHistoryRecords = historyRecords.isNotEmpty()
 
@@ -32,7 +33,8 @@ fun AppNavigation(navController: NavHostController) {
                 onHistory     = { navController.navigate(Screen.History.route) },
                 hasActiveGame     = hasActiveGame,
                 hasHistoryRecords = hasHistoryRecords,
-                isSessionRestored = isSessionRestored
+                isSessionRestored = isSessionRestored,
+                resumeSummary = gameState?.players?.filter { it.isActive }?.joinToString(" · ") { it.name }.orEmpty()
             )
         }
 
