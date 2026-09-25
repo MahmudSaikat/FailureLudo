@@ -3,15 +3,18 @@
 ## Scope and conventions
 - Native Android Ludo: Kotlin + Jetpack Compose in `app/`; deterministic, pure/local
   rules engine in `game-engine/`; bot training in `ai-training/`.
-- Stay on `feat/offline-improvements`. Finish, release, and play the offline Android
-  app before resuming online work at the user's request.
+- Online Android testing is authorized on `feat/online-testing`. Keep
+  `feat/offline-improvements` dedicated to the all-offline Play Store release.
+  Do not merge online features into that release branch or publish the online app.
+  See [online testing preparation](docs/online-testing.md) for isolation requirements.
 - Rebuild/polish layout, board, pawns, movement, dice, sound, and supporting screens.
   The playable presentation is under user review; later user feedback supersedes proposals.
 - Preserve rules, bots, saves, undo/redo, history/replay, and reliable pawn selection.
   Offline startup/play must require no internet, sign-in, or backend.
-- Online/Firebase features, web, and parity work are paused. Inspect/change them only
-  when explicitly requested or needed to remove an offline entry-point dependency.
-  Keep deferred work recoverable; do not reset history or delete it wholesale.
+- Android online/Firebase work may proceed for private testing. Web and parity work
+  remain paused unless explicitly requested. Keep existing work recoverable; do not
+  reset history or delete it wholesale. Backend deployment requires explicit scope
+  and authorization; branch preparation does not authorize deployment.
 - Follow nearby architecture and production-quality error handling. Keep presentation
   separate from rules; avoid speculative abstractions and unrelated cleanup.
 
