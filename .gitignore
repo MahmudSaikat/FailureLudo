@@ -40,3 +40,6 @@ keystore.properties
 /fastlane/report.xml
 /fastlane/README.md
 /fastlane/metadata/
+
+# Private tester feedback and game exports
+/testing-private/
