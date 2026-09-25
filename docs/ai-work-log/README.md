@@ -1,6 +1,12 @@
 # AI Work Log
 
-This folder stores date-based logs for all AI-related work done in this repository.
+Log only significant bot/ML engineering work that contributes to reproducible research:
+training/data generation experiments, tuning, arena evaluations, model promotions or
+rollbacks, and substantive policy/heuristic changes with evidence or measurable results.
+
+Do not log routine coding by an AI assistant, chat, documentation edits, minor exploration,
+or ordinary UI work. Open this guidance only when a task produces qualifying results.
+Append the entry before the final response; create the daily file if it does not exist.
 
 ## File Naming
 
