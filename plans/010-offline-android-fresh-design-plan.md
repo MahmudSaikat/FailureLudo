@@ -453,3 +453,24 @@ were not run. Device visual review remains necessary for compact screens, landsc
 - Validation: app unit tests, debug APK and instrumentation compilation are checked
   for this change. Added device regression coverage for mode switching and default
   color selection; device execution and visual review remain pending.
+
+
+## September 25 follow-up — pre-game usability
+
+The user approved interface previews, then narrowed implementation to pages before
+play. This supersedes the proposed gameplay/status, exit-dialog, and victory changes:
+the board, gameplay controls, exit prompt, and victory screen remain unchanged.
+
+- Home always exposes Saved games, including on a fresh installation, and offers
+  optional Rules and Settings dialogs. Home settings use the existing persisted
+  feedback preferences and tabletop sound preview without changing the board UI.
+- New game offers Pass & play or Vs computer with 2–4 total players. Computer
+  presets start with one human and one to three regular computer opponents; More
+  options carries the preset into the existing custom setup controls.
+- Saved games has an empty-state Import action, player-name titles, a single Replay
+  action for finished games, and Export/Delete in each record's menu. Delete requires
+  confirmation identifying the selected game; Cancel and dismiss preserve it.
+- Verification: app unit tests, debug APK, and instrumentation compilation are run
+  for this change. Added computer-preset tests and pre-game UI regression coverage
+  for empty-history import access and delete cancellation/confirmation. Device
+  execution and visual review remain with the user.

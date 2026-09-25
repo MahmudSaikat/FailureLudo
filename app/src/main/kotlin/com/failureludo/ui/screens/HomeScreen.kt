@@ -18,7 +18,7 @@ import com.failureludo.ui.theme.*
 
 @Composable
 fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Unit,
-    hasActiveGame: Boolean, hasHistoryRecords: Boolean, isSessionRestored: Boolean, resumeSummary: String = "") {
+    hasActiveGame: Boolean, onRules: () -> Unit, onSettings: () -> Unit, isSessionRestored: Boolean, resumeSummary: String = "") {
     Box(Modifier.fillMaxSize().gardenBackground(dark = true)
         .safeDrawingPadding(), contentAlignment=Alignment.Center) {
         Column(Modifier.widthIn(max=420.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp),
@@ -39,12 +39,16 @@ fun HomeScreen(onNewGame: () -> Unit, onResume: () -> Unit, onHistory: () -> Uni
                     colors=ButtonDefaults.buttonColors(containerColor=TabletopStyle.Paper,contentColor=TabletopStyle.Ink)) {
                     Text("New game",fontWeight=FontWeight.Bold)
                 }
-                if (hasHistoryRecords) OutlinedButton(onClick=onHistory,
+                OutlinedButton(onClick=onHistory,
                     modifier=Modifier.fillMaxWidth().heightIn(min = 52.dp), shape=RoundedCornerShape(16.dp),
                     colors=ButtonDefaults.outlinedButtonColors(contentColor=TabletopStyle.Paper,
                         disabledContentColor=TabletopStyle.Muted.copy(alpha=.45f))) {
                     Text("Saved games")
-                } else Text("No saved games yet", color = TabletopStyle.Muted, style = MaterialTheme.typography.bodySmall)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    TextButton(onClick = onRules) { Text("Rules", color = TabletopStyle.Paper) }
+                    TextButton(onClick = onSettings) { Text("Settings", color = TabletopStyle.Paper) }
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {

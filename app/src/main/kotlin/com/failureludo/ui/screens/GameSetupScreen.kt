@@ -48,6 +48,7 @@ fun GameSetupScreen(
     val setup by viewModel.setupState.collectAsState()
     var customGame by rememberSaveable { mutableStateOf(false) }
     var playerCount by rememberSaveable { mutableIntStateOf(2) }
+    var vsComputer by rememberSaveable { mutableStateOf(false) }
     var showColors by rememberSaveable { mutableStateOf(false) }
     val colorsToShow = if (setup.mode == GameMode.TEAM) PlayerColor.entries else setup.activeColors
 
@@ -67,7 +68,7 @@ fun GameSetupScreen(
             Surface {
                 Button(
                     onClick = {
-                        viewModel.updateSetup(if (customGame) setup else quickGameSetup(playerCount))
+                        viewModel.updateSetup(if (customGame) setup else quickGameSetup(playerCount, vsComputer))
                         viewModel.startGame()
                         onStartGame()
                     },
@@ -84,6 +85,12 @@ fun GameSetupScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (!customGame) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FilterChip(selected = !vsComputer, onClick = { vsComputer = false },
+                        label = { Text("Pass & play") })
+                    FilterChip(selected = vsComputer, onClick = { vsComputer = true },
+                        label = { Text("Vs computer") })
+                }
                 Text("Players", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     (2..4).forEach { count ->
@@ -91,10 +98,10 @@ fun GameSetupScreen(
                             label = { Text("$count players") })
                     }
                 }
-                SeatPreview(quickGameSetup(playerCount).activeColors, defaultPlayerColors(), false)
+                SeatPreview(quickGameSetup(playerCount, vsComputer).activeColors, defaultPlayerColors(), false,
+                    quickGameSetup(playerCount, vsComputer).playerNames)
                 OutlinedButton(onClick = {
-                    viewModel.updateSetup(setup.copy(mode = GameMode.FREE_FOR_ALL,
-                        activeColors = quickGameSetup(playerCount).activeColors))
+                    viewModel.updateSetup(quickGameSetup(playerCount, vsComputer))
                     customGame = true
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("More options")
@@ -156,7 +163,8 @@ private fun PlayerMarker(seat: PlayerColor, tint: Color) {
 }
 
 @Composable
-private fun SeatPreview(seats: List<PlayerColor>, palette: Map<PlayerColor, Color>, teams: Boolean) {
+private fun SeatPreview(seats: List<PlayerColor>, palette: Map<PlayerColor, Color>, teams: Boolean,
+    names: Map<PlayerColor, String> = emptyMap()) {
     Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Surface)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf(listOf(PlayerColor.RED, PlayerColor.BLUE), listOf(PlayerColor.GREEN, PlayerColor.YELLOW)).forEach { row ->
@@ -173,7 +181,7 @@ private fun SeatPreview(seats: List<PlayerColor>, palette: Map<PlayerColor, Colo
                             PlayerMarker(seat, if (active) tint else OnSurface.copy(alpha = .2f))
                             Text(if (!active) "—" else if (teams) {
                                 if (seat == PlayerColor.RED || seat == PlayerColor.YELLOW) "Team 1" else "Team 2"
-                            } else "${seats.indexOf(seat) + 1}", style = MaterialTheme.typography.labelLarge)
+                            } else names[seat] ?: "${seats.indexOf(seat) + 1}", style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }

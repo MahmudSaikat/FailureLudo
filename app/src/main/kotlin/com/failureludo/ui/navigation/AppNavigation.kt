@@ -1,6 +1,9 @@
 package com.failureludo.ui.navigation
 
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.failureludo.ui.screens.RulesDialog
+import com.failureludo.ui.screens.HomeSettingsDialog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -18,11 +21,13 @@ import com.failureludo.viewmodel.GameViewModel
 fun AppNavigation(navController: NavHostController) {
     val gameViewModel: GameViewModel = viewModel()
     val isSessionRestored by gameViewModel.isSessionRestored.collectAsState()
-    val historyRecords by gameViewModel.historyRecords.collectAsState()
+    var showRules by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    if (showRules) RulesDialog { showRules = false }
+    if (showSettings) HomeSettingsDialog(gameViewModel) { showSettings = false }
 
     val gameState by gameViewModel.gameState.collectAsState()
     val hasActiveGame = gameViewModel.hasActiveGame
-    val hasHistoryRecords = historyRecords.isNotEmpty()
 
     NavHost(navController = navController, startDestination = Screen.Home.route) {
 
@@ -32,7 +37,8 @@ fun AppNavigation(navController: NavHostController) {
                 onResume      = { navController.navigate(Screen.Game.route) },
                 onHistory     = { navController.navigate(Screen.History.route) },
                 hasActiveGame     = hasActiveGame,
-                hasHistoryRecords = hasHistoryRecords,
+                onRules = { showRules = true },
+                onSettings = { showSettings = true },
                 isSessionRestored = isSessionRestored,
                 resumeSummary = gameState?.players?.filter { it.isActive }?.joinToString(" · ") { it.name }.orEmpty()
             )
