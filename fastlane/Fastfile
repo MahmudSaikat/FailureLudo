@@ -1,0 +1,55 @@
+default_platform(:android)
+
+def play_key_path
+  path = ENV["SUPPLY_JSON_KEY"]
+  UI.user_error!("Set SUPPLY_JSON_KEY in fastlane/.env. See docs/fastlane.md.") if path.to_s.empty?
+  path = File.expand_path(path, File.expand_path("..", __dir__))
+  UI.user_error!("Google Play JSON key file does not exist at the configured path.") unless File.file?(path)
+  path
+end
+
+platform :android do
+  desc "Verify Play app access and list version codes on a track (default: internal)"
+  lane :verify_play do |options|
+    codes = google_play_track_version_codes(
+      package_name: "com.failureludo",
+      json_key: play_key_path,
+      track: options[:track] || "internal"
+    )
+    UI.success("Play access verified. Track version codes: #{codes.join(', ')}")
+  end
+
+  desc "Build a signed release AAB locally"
+  lane :build_release do
+    root = File.expand_path("..", __dir__)
+    unless File.file?(File.join(root, "keystore.properties"))
+      UI.user_error!("Configure keystore.properties before building a signed release.")
+    end
+    gradle(task: ":app:bundleRelease", project_dir: root)
+  end
+
+  desc "Build and upload to internal testing; validate_only:true validates without committing"
+  lane :internal do |options|
+    validate_only = options.fetch(:validate_only, false)
+    unless [true, false, "true", "false"].include?(validate_only)
+      UI.user_error!("validate_only must be true or false.")
+    end
+    key = play_key_path
+    build_release
+    aab = lane_context[SharedValues::GRADLE_AAB_OUTPUT_PATH]
+    UI.user_error!("The release build did not produce an AAB.") unless aab && File.file?(aab)
+    upload_to_play_store(
+      package_name: "com.failureludo",
+      json_key: key,
+      aab: aab,
+      track: "internal",
+      release_status: "completed",
+      validate_only: validate_only == true || validate_only == "true",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true
+    )
+  end
+end

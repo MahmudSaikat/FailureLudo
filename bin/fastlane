@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$project_root"
+ruby_version="$(cat .ruby-version)"
+local_ruby="$project_root/.local-tools/mise-data/installs/ruby/$ruby_version/bin"
+if [[ -x "$local_ruby/ruby" ]]; then
+  export PATH="$local_ruby:$PATH"
+fi
+if ! command -v bundle >/dev/null 2>&1; then
+  echo 'Install Ruby 3.3+ and Bundler, then run bundle install (see docs/fastlane.md).' >&2
+  exit 1
+fi
+export BUNDLE_GEMFILE="$project_root/Gemfile"
+export BUNDLE_PATH="$project_root/vendor/bundle"
+# Supply HTTP debug logs include authorization headers. Do not inherit shell DEBUG.
+export DEBUG=false
+export FASTLANE_SKIP_UPDATE_CHECK=1
+export FASTLANE_HIDE_CHANGELOG=1
+export FASTLANE_OPT_OUT_USAGE=1
+export FASTLANE_SKIP_DOCS=1
+export LANG="${LANG:-C.UTF-8}"
+exec bundle exec fastlane "$@"

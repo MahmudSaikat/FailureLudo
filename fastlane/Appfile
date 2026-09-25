@@ -1,0 +1,6 @@
+package_name("com.failureludo")
+
+key_path = ENV["SUPPLY_JSON_KEY"]
+unless key_path.to_s.empty?
+  json_key_file(File.expand_path(key_path, File.expand_path("..", __dir__)))
+end

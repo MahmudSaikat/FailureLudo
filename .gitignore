@@ -30,3 +30,13 @@ Thumbs.db
 # Local source clips used during SFX editing
 design/audio-sources/
 keystore.properties
+
+# Fastlane dependencies, local credentials, and generated reports
+/.bundle/
+/vendor/bundle/
+/fastlane/.env*
+!/fastlane/.env.example
+/fastlane/credentials/
+/fastlane/report.xml
+/fastlane/README.md
+/fastlane/metadata/
